@@ -1,0 +1,20 @@
+stages:
+  - build
+  - deploy
+
+company_srv:
+  stage: build
+  script:
+    - yarn
+  only:
+    changes:
+      - services/company_srv/**/*
+
+deploy_service1:
+  stage: deploy
+  script:
+    - yarn build
+    - yarn start
+  only:
+    changes:
+      - services/company_srv/**/*

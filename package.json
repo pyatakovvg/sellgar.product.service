@@ -1,0 +1,32 @@
+{
+  "name": "root",
+  "license": "UNLICENSED",
+  "scripts": {
+    "update": "yarn upgrade-interactive",
+    "dev:product_srv": "yarn workspace @service/product start:dev",
+    "start:product_srv": "yarn workspace @service/product start",
+    "build:product_srv": "yarn workspaces foreach -tR --from '@service/product' run build"
+  },
+  "dependencies": {
+    "rimraf": "6.1.2",
+    "ts-node": "10.9.2"
+  },
+  "devDependencies": {
+    "@types/node": "25.0.10",
+    "@typescript-eslint/eslint-plugin": "8.54.0",
+    "@typescript-eslint/parser": "8.54.0",
+    "eslint": "9.39.2",
+    "eslint-config-prettier": "10.1.8",
+    "eslint-plugin-prettier": "5.5.5",
+    "jiti": "2.6.1",
+    "prettier": "3.8.1",
+    "typescript": "5.9.3"
+  },
+  "workspaces": [
+    "services/**/*"
+  ],
+  "packageManager": "yarn@3.6.1",
+  "engines": {
+    "node": ">=22"
+  }
+}

@@ -1,0 +1,48 @@
+version: "3.8"
+services:
+#  monorepo_rabbitmq:
+#    image: rabbitmq:3.12-management
+#    hostname: monorepo-rabbitmq
+#    container_name: monorepo-rabbit-mq
+#    restart: always
+#    environment:
+#      - RABBITMQ_DEFAULT_USER=admin
+#      - RABBITMQ_DEFAULT_PASS=1Ctdfcnjgjkm
+#      - RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS=-rabbit disk_free_limit 2147483648
+#    volumes:
+#      - rabbitmq:/var/lib/rabbitmq
+#    ports:
+#      - '5673:5672'
+#      - '15673:15672'
+
+#  monorepo_postgres:
+#    image: postgres:14.1-alpine
+#    container_name: monorepo-postgresql
+#    restart: always
+#    environment:
+#      - POSTGRES_USER=postgres
+#      - POSTGRES_PASSWORD=postgres
+#    ports:
+#      - '5433:5432'
+#    volumes:
+#      - postgres:/var/lib/postgresql/data
+
+  monorepo_minio:
+    image: quay.io/minio/minio
+    container_name: minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: admin
+    volumes:
+      - ~/minio/data:/data
+    command: server /data --console-address ":9001"
+
+
+volumes:
+  rabbitmq:
+    driver: local
+  postgres:
+    driver: local

@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "baseUrl": "./",
+
+    "paths": {
+      "@/api/*": ["./src/api/*"],
+      "@/entities/*": ["./src/entities/*"],
+      "@/prisma/*": ["./src/prisma/*", "./prisma/*"],
+    }
+  },
+  "include": ["**/src/**/*.ts", "**/src/**/*.tsx"],
+}
