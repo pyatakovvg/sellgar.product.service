@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 
 import * as uuid from 'uuid';
@@ -25,6 +25,7 @@ export class PropertyRepository {
       .createQueryBuilder()
       .select([
         'property.uuid',
+        'property.version',
         'property.code',
         'property.name',
         'property.description',
@@ -55,6 +56,7 @@ export class PropertyRepository {
       .createQueryBuilder()
       .select([
         'property.uuid',
+        'property.version',
         'property.code',
         'property.name',
         'property.description',
@@ -83,8 +85,6 @@ export class PropertyRepository {
   async create(dto: CreatePropertyDto) {
     const runner = this.dataSource.createQueryRunner();
 
-    console.log('Property created dto:', dto);
-
     await runner.connect();
     await runner.startTransaction();
 
@@ -110,6 +110,7 @@ export class PropertyRepository {
         .createQueryBuilder()
         .select([
           'property.uuid',
+          'property.version',
           'property.code',
           'property.name',
           'property.description',
@@ -124,8 +125,6 @@ export class PropertyRepository {
         .leftJoinAndSelect('property.unit', 'unit')
         .where('property.uuid = :uuid', { uuid: newUuid })
         .getOneOrFail();
-
-      console.log('Property created:', result);
 
       const instanceResult = plainToInstance(PropertyEntity, result);
 
@@ -145,12 +144,24 @@ export class PropertyRepository {
   async update(dto: UpdatePropertyDto) {
     const runner = this.dataSource.createQueryRunner();
 
-    console.log('Property update dto:', dto);
-
     await runner.connect();
     await runner.startTransaction();
 
     try {
+      const property = await runner.manager
+        .createQueryBuilder(PropertyModel, 'property')
+        .setLock('pessimistic_write')
+        .where('property.uuid = :uuid', { uuid: dto.uuid })
+        .getOne();
+
+      if (!property) {
+        throw new NotFoundException(`Property ${dto.uuid} not found`);
+      }
+
+      if (property.version !== dto.version) {
+        throw new ConflictException(`Property ${dto.uuid} was changed by another request`);
+      }
+
       await runner.manager
         .createQueryBuilder()
         .update(PropertyModel)
@@ -161,14 +172,17 @@ export class PropertyRepository {
           type: dto.type,
           groupUuid: dto.groupUuid,
           unitUuid: dto.unitUuid,
+          version: () => 'version + 1',
         })
         .where('uuid = :uuid', { uuid: dto.uuid })
+        .andWhere('version = :version', { version: dto.version })
         .execute();
 
       const result = await runner.manager
         .createQueryBuilder()
         .select([
           'property.uuid',
+          'property.version',
           'property.code',
           'property.name',
           'property.description',
@@ -183,8 +197,6 @@ export class PropertyRepository {
         .leftJoinAndSelect('property.unit', 'unit')
         .where('property.uuid = :uuid', { uuid: dto.uuid })
         .getOneOrFail();
-
-      console.log('Property update:', result);
 
       const instanceResult = plainToInstance(PropertyEntity, result);
 

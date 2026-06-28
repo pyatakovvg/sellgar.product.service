@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 
 import * as uuid from 'uuid';
@@ -25,6 +25,7 @@ export class PropertyGroupRepository {
       .createQueryBuilder()
       .select([
         'property_group.uuid',
+        'property_group.version',
         'property_group.name',
         'property_group.description',
         'property_group.createdAt',
@@ -39,8 +40,6 @@ export class PropertyGroupRepository {
 
     const result = await builder.getMany();
 
-    console.log('Property group result:', result);
-
     const resultInstance = result.map((entity) => plainToInstance(PropertyGroupEntity, entity));
 
     await Promise.all(resultInstance.map((entity) => validateOrReject(entity)));
@@ -53,6 +52,7 @@ export class PropertyGroupRepository {
       .createQueryBuilder()
       .select([
         'property_group.uuid',
+        'property_group.version',
         'property_group.name',
         'property_group.description',
         'property_group.createdAt',
@@ -73,8 +73,6 @@ export class PropertyGroupRepository {
 
   async create(dto: CreatePropertyGroupDto) {
     const runner = this.dataSource.createQueryRunner();
-
-    console.log('Property group created dto:', dto);
 
     await runner.connect();
     await runner.startTransaction();
@@ -97,6 +95,7 @@ export class PropertyGroupRepository {
         .createQueryBuilder()
         .select([
           'property_group.uuid',
+          'property_group.version',
           'property_group.name',
           'property_group.description',
           'property_group.createdAt',
@@ -107,8 +106,6 @@ export class PropertyGroupRepository {
         .leftJoinAndSelect('properties.unit', 'unit')
         .where('property_group.uuid = :uuid', { uuid: newUuid })
         .getOneOrFail();
-
-      console.log('Property group created:', result);
 
       const instanceResult = plainToInstance(PropertyGroupEntity, result);
 
@@ -131,23 +128,38 @@ export class PropertyGroupRepository {
     await runner.connect();
     await runner.startTransaction();
 
-    console.log('Property group update dto:', dto);
-
     try {
+      const propertyGroup = await runner.manager
+        .createQueryBuilder(PropertyGroupModel, 'propertyGroup')
+        .setLock('pessimistic_write')
+        .where('propertyGroup.uuid = :uuid', { uuid: dto.uuid })
+        .getOne();
+
+      if (!propertyGroup) {
+        throw new NotFoundException(`Property group ${dto.uuid} not found`);
+      }
+
+      if (propertyGroup.version !== dto.version) {
+        throw new ConflictException(`Property group ${dto.uuid} was changed by another request`);
+      }
+
       await runner.manager
         .createQueryBuilder()
         .update(PropertyGroupModel)
         .set({
           name: dto.name,
           description: dto.description,
+          version: () => 'version + 1',
         })
         .where('uuid = :uuid', { uuid: dto.uuid })
+        .andWhere('version = :version', { version: dto.version })
         .execute();
 
       const result = await runner.manager
         .createQueryBuilder()
         .select([
           'property_group.uuid',
+          'property_group.version',
           'property_group.name',
           'property_group.description',
           'property_group.createdAt',
@@ -158,8 +170,6 @@ export class PropertyGroupRepository {
         .leftJoinAndSelect('properties.unit', 'unit')
         .where('property_group.uuid = :uuid', { uuid: dto.uuid })
         .getOneOrFail();
-
-      console.log('Property group updated:', result);
 
       const instanceResult = plainToInstance(PropertyGroupEntity, result);
 

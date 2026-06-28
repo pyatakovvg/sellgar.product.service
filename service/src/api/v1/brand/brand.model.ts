@@ -16,6 +16,9 @@ export class BrandModel {
   @Column({ name: 'description', type: 'text', comment: 'описание бренда' })
   description: string;
 
+  @Column({ name: 'version', type: 'int', default: 1 })
+  version: number;
+
   @OneToMany(() => ProductModel, (product) => product.brand)
   products: ProductModel[];
 

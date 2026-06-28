@@ -20,6 +20,9 @@ export class CategoryModel {
   @Column({ name: 'order', type: 'int', default: 0 })
   order: number;
 
+  @Column({ name: 'version', type: 'int', default: 1 })
+  version: number;
+
   // Прямые родители (опционально)
   @OneToMany(() => CategoryClosureModel, (closure) => closure.ancestor)
   ancestors: CategoryClosureModel[];

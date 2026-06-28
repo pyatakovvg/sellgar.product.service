@@ -21,6 +21,14 @@
 - Для TypeORM-частей поддерживайте согласованность `model`, `entity`, `repository`, `service`, `controller`.
 - Изменения product v1 могут требовать синхронизации с gateway product v2, где внешний контракт может отличаться от внутренней версии.
 - При изменении связи variant-image синхронизируйте `gateways/admin/src/api/product_srv/v2/variant` и UI-контракт редактирования варианта.
+- `product` и `variant` используют статусный lifecycle (`active`, `archived`, `disabled`);
+  значения описаны enum `CatalogStatus` и PostgreSQL enum `catalog_status_enum`.
+  Удаление из пользовательского сценария переводит сущность в статус `archived`, увеличивает
+  `version` и пишет integration event; физический `DELETE` допустим только для отдельного purge.
+- Read/list выборки по status должны исключать только `archived`; `disabled` остается видимым
+  состоянием сущности.
+- Все update-команды самостоятельных сущностей должны принимать `version`, проверять ее перед
+  записью и возвращать `ConflictException` при рассинхроне.
 - RMQ queues/exchange берутся из `AMQP_PRODUCT_SRV_COMMAND_QUEUE`, `AMQP_PRODUCT_SRV_EVENT_QUEUE`, `AMQP_EVENTS_EXCHANGE`.
 - Доменные события формируйте в коде сервиса, но запись в `outbox_event` выполняйте через `OutboxWriter` и текущий TypeORM `EntityManager`.
 

@@ -6,6 +6,7 @@ import { DataSource } from 'typeorm';
 import { validateOrReject } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
 
+import { CatalogStatus } from '../../catalog/catalog-status.enum';
 import { VariantModel } from '../variant.model';
 import { VariantEntity } from '../variant.entity';
 import { AddVariantImageDto } from './dto/add-variant-image.dto';
@@ -17,7 +18,10 @@ export class VariantRepository {
   constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
 
   count() {
-    return this.dataSource.createQueryBuilder(VariantModel, 'variant').getCount();
+    return this.dataSource
+      .createQueryBuilder(VariantModel, 'variant')
+      .where('variant.status != :archivedStatus', { archivedStatus: CatalogStatus.Archived })
+      .getCount();
   }
 
   async findAll() {
@@ -31,7 +35,10 @@ export class VariantRepository {
       .leftJoinAndSelect('variant.product', 'product')
       .leftJoinAndSelect('product.brand', 'brand')
       .leftJoinAndSelect('product.category', 'category')
-      .leftJoinAndSelect('product.variants', 'variants')
+      .leftJoinAndSelect('product.variants', 'variants', 'variants.status != :archivedVariantStatus', {
+        archivedVariantStatus: CatalogStatus.Archived,
+      })
+      .where('variant.status != :archivedStatus', { archivedStatus: CatalogStatus.Archived })
       .orderBy('product.createdAt', 'DESC')
       .addOrderBy('variant.createdAt', 'ASC')
       .addOrderBy('properties.order', 'ASC')
@@ -61,6 +68,7 @@ export class VariantRepository {
       .leftJoinAndSelect('product.brand', 'brand')
       .leftJoinAndSelect('product.category', 'category')
       .where('variant.uuid = :uuid', { uuid })
+      .andWhere('variant.status != :archivedStatus', { archivedStatus: CatalogStatus.Archived })
       .orderBy('variant.createdAt', 'ASC')
       .addOrderBy('properties.order', 'ASC')
       .addOrderBy('images.sortOrder', 'ASC')
@@ -173,6 +181,7 @@ export class VariantRepository {
       const variantExists = await runner.manager
         .createQueryBuilder(VariantModel, 'variant')
         .where('variant.uuid = :uuid', { uuid: dto.variantUuid })
+        .andWhere('variant.status != :archivedStatus', { archivedStatus: CatalogStatus.Archived })
         .getExists();
 
       if (!variantExists) {

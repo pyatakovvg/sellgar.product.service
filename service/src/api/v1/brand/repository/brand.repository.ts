@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 
 import * as uuid from 'uuid';
@@ -24,7 +24,7 @@ export class BrandRepository {
   async findAll() {
     const result = await this.dataSource
       .createQueryBuilder()
-      .select(['brand.uuid', 'brand.code', 'brand.name', 'brand.description', 'brand.createdAt', 'brand.updatedAt'])
+      .select(['brand.uuid', 'brand.version', 'brand.code', 'brand.name', 'brand.description', 'brand.createdAt', 'brand.updatedAt'])
       .from(BrandModel, 'brand')
       .orderBy('brand.createdAt', 'DESC')
       .getMany();
@@ -39,7 +39,7 @@ export class BrandRepository {
   async findByUuid(uuid: string) {
     const result = await this.dataSource
       .createQueryBuilder()
-      .select(['brand.uuid', 'brand.code', 'brand.name', 'brand.description', 'brand.createdAt', 'brand.updatedAt'])
+      .select(['brand.uuid', 'brand.version', 'brand.code', 'brand.name', 'brand.description', 'brand.createdAt', 'brand.updatedAt'])
       .from(BrandModel, 'brand')
       .where('brand.uuid = :uuid', { uuid })
       .getOneOrFail();
@@ -74,7 +74,7 @@ export class BrandRepository {
 
       const result = await runner.manager
         .createQueryBuilder()
-        .select(['brand.uuid', 'brand.code', 'brand.name', 'brand.description', 'brand.createdAt', 'brand.updatedAt'])
+        .select(['brand.uuid', 'brand.version', 'brand.code', 'brand.name', 'brand.description', 'brand.createdAt', 'brand.updatedAt'])
         .from(BrandModel, 'brand')
         .where('brand.uuid = :uuid', { uuid: newUuid })
         .getOneOrFail();
@@ -99,9 +99,21 @@ export class BrandRepository {
     await runner.connect();
     await runner.startTransaction();
 
-    console.log('Brand update dto:', dto);
-
     try {
+      const brand = await runner.manager
+        .createQueryBuilder(BrandModel, 'brand')
+        .setLock('pessimistic_write')
+        .where('brand.uuid = :uuid', { uuid: dto.uuid })
+        .getOne();
+
+      if (!brand) {
+        throw new NotFoundException(`Brand ${dto.uuid} not found`);
+      }
+
+      if (brand.version !== dto.version) {
+        throw new ConflictException(`Brand ${dto.uuid} was changed by another request`);
+      }
+
       await runner.manager
         .createQueryBuilder()
         .update(BrandModel)
@@ -109,18 +121,18 @@ export class BrandRepository {
           code: dto.code,
           name: dto.name,
           description: dto.description,
+          version: () => 'version + 1',
         })
-        .where('brand.uuid = :uuid', { uuid: dto.uuid })
+        .where('uuid = :uuid', { uuid: dto.uuid })
+        .andWhere('version = :version', { version: dto.version })
         .execute();
 
       const result = await runner.manager
         .createQueryBuilder()
-        .select(['brand.uuid', 'brand.code', 'brand.name', 'brand.description', 'brand.createdAt', 'brand.updatedAt'])
+        .select(['brand.uuid', 'brand.version', 'brand.code', 'brand.name', 'brand.description', 'brand.createdAt', 'brand.updatedAt'])
         .from(BrandModel, 'brand')
         .where('brand.uuid = :uuid', { uuid: dto.uuid })
         .getOneOrFail();
-
-      console.log('Brand updated:', result);
 
       const instanceResult = plainToInstance(BrandEntity, result);
 

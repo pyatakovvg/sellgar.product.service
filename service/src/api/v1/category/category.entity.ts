@@ -7,6 +7,10 @@ export class CategoryEntity {
   uuid: string;
 
   @Expose()
+  @IsNumber()
+  version: number;
+
+  @Expose()
   @IsUUID()
   @IsOptional()
   parentUuid?: string;

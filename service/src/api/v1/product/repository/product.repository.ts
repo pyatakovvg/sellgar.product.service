@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { OutboxEventInput, OutboxWriter } from '@sellgar/outbox';
 
@@ -12,11 +12,27 @@ import { UpdateProductDto } from './dto/update-product.dto';
 
 import { ProductModel } from '../product.model';
 
+import { CatalogStatus } from '../../catalog/catalog-status.enum';
 import { ProductEntity } from '../product.entity';
 import { VariantModel } from '../../variant/variant.model';
 import { VariantPropertyModel } from '../../variant/variant-property.model';
 import { ImageModel } from '../../image/image.model';
 import { VariantImageModel } from '../../variant/variant-image.model';
+
+type ProductUpdateRow = {
+  uuid: string;
+  version: number;
+  name: string;
+  status: CatalogStatus;
+};
+
+type VariantUpdateRow = {
+  uuid: string;
+  version: number;
+  name: string;
+  product_uuid: string;
+  status: CatalogStatus;
+};
 
 @Injectable()
 export class ProductRepository {
@@ -26,7 +42,10 @@ export class ProductRepository {
   ) {}
 
   count() {
-    return this.dataSource.createQueryBuilder(ProductModel, 'product').getCount();
+    return this.dataSource
+      .createQueryBuilder(ProductModel, 'product')
+      .where('product.status != :archivedStatus', { archivedStatus: CatalogStatus.Archived })
+      .getCount();
   }
 
   async findAll() {
@@ -34,12 +53,15 @@ export class ProductRepository {
       .createQueryBuilder(ProductModel, 'product')
       .leftJoinAndSelect('product.brand', 'brand')
       .leftJoinAndSelect('product.category', 'category')
-      .leftJoinAndSelect('product.variants', 'variants')
+      .leftJoinAndSelect('product.variants', 'variants', 'variants.status != :archivedVariantStatus', {
+        archivedVariantStatus: CatalogStatus.Archived,
+      })
       .leftJoinAndSelect('variants.properties', 'properties')
       .leftJoinAndSelect('properties.property', 'property')
       .leftJoinAndSelect('property.unit', 'unit')
       .leftJoinAndSelect('variants.images', 'images')
       .leftJoinAndSelect('images.image', 'image')
+      .where('product.status != :archivedProductStatus', { archivedProductStatus: CatalogStatus.Archived })
       .orderBy('product.createdAt', 'DESC')
       .addOrderBy('variants.createdAt', 'ASC')
       .addOrderBy('properties.order', 'ASC')
@@ -62,13 +84,16 @@ export class ProductRepository {
       .createQueryBuilder(ProductModel, 'product')
       .leftJoinAndSelect('product.brand', 'brand')
       .leftJoinAndSelect('product.category', 'category')
-      .leftJoinAndSelect('product.variants', 'variants')
+      .leftJoinAndSelect('product.variants', 'variants', 'variants.status != :archivedVariantStatus', {
+        archivedVariantStatus: CatalogStatus.Archived,
+      })
       .leftJoinAndSelect('variants.properties', 'properties')
       .leftJoinAndSelect('properties.property', 'property')
       .leftJoinAndSelect('property.unit', 'unit')
       .leftJoinAndSelect('variants.images', 'images')
       .leftJoinAndSelect('images.image', 'image')
       .where('product.uuid = :uuid', { uuid })
+      .andWhere('product.status != :archivedProductStatus', { archivedProductStatus: CatalogStatus.Archived })
       .orderBy('variants.createdAt', 'ASC')
       .addOrderBy('properties.order', 'ASC')
       .addOrderBy('images.sortOrder', 'ASC')
@@ -103,13 +128,14 @@ export class ProductRepository {
           description: dto.description,
           brandUuid: dto.brandUuid,
           categoryUuid: dto.categoryUuid,
+          status: CatalogStatus.Active,
         })
         .execute();
 
       integrationEvents.push(
         this.createIntegrationEvent('product.created', 'product', newUuid, 1, {
           name: dto.name,
-          status: 'active',
+          status: CatalogStatus.Active,
         }),
       );
 
@@ -121,6 +147,7 @@ export class ProductRepository {
             name: variant.name,
             description: variant.description,
             productUuid: newUuid,
+            status: CatalogStatus.Active,
           },
         ]);
 
@@ -142,7 +169,7 @@ export class ProductRepository {
           this.createIntegrationEvent('variant.created', 'variant', newVariant.raw[0].uuid, 1, {
             productUuid: newUuid,
             name: variant.name,
-            status: 'active',
+            status: CatalogStatus.Active,
           }),
         );
       }
@@ -151,7 +178,9 @@ export class ProductRepository {
         .createQueryBuilder(ProductModel, 'product')
         .leftJoinAndSelect('product.brand', 'brand')
         .leftJoinAndSelect('product.category', 'category')
-        .leftJoinAndSelect('product.variants', 'variants')
+        .leftJoinAndSelect('product.variants', 'variants', 'variants.status != :archivedVariantStatus', {
+          archivedVariantStatus: CatalogStatus.Archived,
+        })
         .leftJoinAndSelect('variants.properties', 'properties')
         .leftJoinAndSelect('properties.property', 'property')
         .leftJoinAndSelect('property.unit', 'unit')
@@ -188,10 +217,45 @@ export class ProductRepository {
     await runner.startTransaction();
 
     try {
-      const previousVariants = await runner.manager.find(VariantModel, { where: { productUuid: dto.uuid } });
-      const previousVariantMap = new Map(previousVariants.map((variant) => [variant.uuid, variant]));
+      const product = await runner.manager
+        .createQueryBuilder(ProductModel, 'product')
+        .setLock('pessimistic_write')
+        .where('product.uuid = :uuid', { uuid: dto.uuid })
+        .andWhere('product.status != :archivedStatus', { archivedStatus: CatalogStatus.Archived })
+        .getOne();
 
-      await runner.manager
+      if (!product) {
+        throw new NotFoundException(`Product ${dto.uuid} not found`);
+      }
+
+      if (product.version !== dto.version) {
+        throw new ConflictException(`Product ${dto.uuid} was changed by another request`);
+      }
+
+      const previousVariants = await runner.manager
+        .createQueryBuilder(VariantModel, 'variant')
+        .setLock('pessimistic_write')
+        .where('variant.productUuid = :productUuid', { productUuid: dto.uuid })
+        .getMany();
+      const previousVariantMap = new Map(previousVariants.map((variant) => [variant.uuid, variant]));
+      const incomingVariantUuids = dto.variants.map((variant) => variant.uuid).filter((value): value is string => Boolean(value));
+      const duplicateVariantUuid = this.findDuplicate(incomingVariantUuids);
+
+      if (duplicateVariantUuid) {
+        throw new BadRequestException(`Variant ${duplicateVariantUuid} is duplicated in update payload`);
+      }
+
+      const invalidVariantUuids = incomingVariantUuids.filter((variantUuid) => {
+        const previousVariant = previousVariantMap.get(variantUuid);
+
+        return !previousVariant || previousVariant.status === CatalogStatus.Archived;
+      });
+
+      if (invalidVariantUuids.length > 0) {
+        throw new BadRequestException(`Some variants do not belong to active product ${dto.uuid}`);
+      }
+
+      const productUpdateResult = await runner.manager
         .createQueryBuilder()
         .update(ProductModel)
         .set({
@@ -201,80 +265,76 @@ export class ProductRepository {
           categoryUuid: dto.categoryUuid,
           version: () => 'version + 1',
         })
-        .where('product.uuid = :uuid', { uuid: dto.uuid })
+        .where('uuid = :uuid', { uuid: dto.uuid })
+        .andWhere('status != :archivedStatus', { archivedStatus: CatalogStatus.Archived })
+        .andWhere('version = :version', { version: dto.version })
+        .returning(['uuid', 'version', 'name', 'status'])
         .execute();
 
-      const existingUuids = dto.variants.map((p) => p.uuid).filter(Boolean);
-      const removedVariants = previousVariants.filter((variant) => !existingUuids.includes(variant.uuid));
+      const removedVariants = previousVariants.filter(
+        (variant) => variant.status !== CatalogStatus.Archived && !incomingVariantUuids.includes(variant.uuid),
+      );
+      const productRow = this.expectSingleRaw<ProductUpdateRow>(productUpdateResult.raw, `Product ${dto.uuid} not found`);
 
-      await runner.manager
-        .createQueryBuilder()
-        .delete()
-        .from(VariantModel)
-        .where('productUuid = :productUuid', { productUuid: dto.uuid })
-        .andWhere(existingUuids.length > 0 ? 'uuid NOT IN (:...existingUuids)' : '1=1', { existingUuids })
-        .execute();
+      if (removedVariants.length > 0) {
+        const archiveResult = await runner.manager
+          .createQueryBuilder()
+          .update(VariantModel)
+          .set({
+            status: CatalogStatus.Archived,
+            version: () => 'version + 1',
+          })
+          .where('uuid IN (:...removedVariantUuids)', {
+            removedVariantUuids: removedVariants.map((variant) => variant.uuid),
+          })
+          .andWhere('product_uuid = :productUuid', { productUuid: dto.uuid })
+          .andWhere('status != :archivedStatus', { archivedStatus: CatalogStatus.Archived })
+          .returning(['uuid', 'version', 'name', 'product_uuid', 'status'])
+          .execute();
 
-      for (const variant of removedVariants) {
-        integrationEvents.push(
-          this.createIntegrationEvent('variant.deleted', 'variant', variant.uuid, variant.version + 1, {
-            productUuid: variant.productUuid,
-            name: variant.name,
-            status: 'archived',
-          }),
-        );
+        for (const variant of archiveResult.raw as VariantUpdateRow[]) {
+          integrationEvents.push(
+            this.createIntegrationEvent('variant.deleted', 'variant', variant.uuid, variant.version, {
+              productUuid: variant.product_uuid,
+              name: variant.name,
+              status: variant.status,
+            }),
+          );
+        }
       }
 
       for (let index in dto.variants) {
         const variant = dto.variants[index];
 
         if (variant.uuid) {
-          await runner.manager
+          const variantUpdateResult = await runner.manager
             .createQueryBuilder()
             .update(VariantModel)
             .set({
               name: variant.name,
               description: variant.description,
-              productUuid: dto.uuid,
               version: () => 'version + 1',
             })
             .where('uuid = :uuid', { uuid: variant.uuid })
+            .andWhere('product_uuid = :productUuid', { productUuid: dto.uuid })
+            .andWhere('status != :archivedStatus', { archivedStatus: CatalogStatus.Archived })
+            .returning(['uuid', 'version', 'name', 'product_uuid', 'status'])
             .execute();
 
-          const previousVariant = previousVariantMap.get(variant.uuid);
-          const nextVersion = (previousVariant?.version ?? 0) + 1;
+          const variantRow = this.expectSingleRaw<VariantUpdateRow>(
+            variantUpdateResult.raw,
+            `Variant ${variant.uuid} not found in product ${dto.uuid}`,
+          );
 
           integrationEvents.push(
-            this.createIntegrationEvent('variant.updated', 'variant', variant.uuid, nextVersion, {
-              productUuid: dto.uuid,
-              name: variant.name,
-              status: 'active',
+            this.createIntegrationEvent('variant.updated', 'variant', variantRow.uuid, variantRow.version, {
+              productUuid: variantRow.product_uuid,
+              name: variantRow.name,
+              status: variantRow.status,
             }),
           );
 
-          const existingUuids = variant.properties.map((p) => p.uuid).filter(Boolean);
-
-          await runner.manager
-            .createQueryBuilder()
-            .delete()
-            .from(VariantPropertyModel)
-            .where('variantUuid = :variantUuid', { variantUuid: variant.uuid })
-            .andWhere(existingUuids.length > 0 ? 'uuid NOT IN (:...existingUuids)' : '1=1', { existingUuids })
-            .execute();
-
-          await runner.manager.upsert(
-            VariantPropertyModel,
-            variant.properties.map((property, order) => {
-              return {
-                uuid: property?.uuid,
-                variantUuid: variant.uuid,
-                propertyUuid: property.propertyUuid,
-                value: property.value,
-                order,
-              };
-            }),
-            ['uuid'],
-          );
+          await this.syncVariantProperties(runner.manager, variant.uuid, variant.properties);
 
           if (variant.images) {
             await this.syncVariantImages(runner.manager, variant.uuid, variant.images);
@@ -285,6 +345,7 @@ export class ProductRepository {
               name: variant.name,
               description: variant.description,
               productUuid: dto.uuid,
+              status: CatalogStatus.Active,
             },
           ]);
 
@@ -306,7 +367,7 @@ export class ProductRepository {
             this.createIntegrationEvent('variant.created', 'variant', newVariant.raw[0].uuid, 1, {
               productUuid: dto.uuid,
               name: variant.name,
-              status: 'active',
+              status: CatalogStatus.Active,
             }),
           );
         }
@@ -316,13 +377,16 @@ export class ProductRepository {
         .createQueryBuilder(ProductModel, 'product')
         .leftJoinAndSelect('product.brand', 'brand')
         .leftJoinAndSelect('product.category', 'category')
-        .leftJoinAndSelect('product.variants', 'variants')
+        .leftJoinAndSelect('product.variants', 'variants', 'variants.status != :archivedVariantStatus', {
+          archivedVariantStatus: CatalogStatus.Archived,
+        })
         .leftJoinAndSelect('variants.properties', 'properties')
         .leftJoinAndSelect('properties.property', 'property')
         .leftJoinAndSelect('property.unit', 'unit')
         .leftJoinAndSelect('variants.images', 'images')
         .leftJoinAndSelect('images.image', 'image')
         .where('product.uuid = :uuid', { uuid: dto.uuid })
+        .andWhere('product.status != :archivedProductStatus', { archivedProductStatus: CatalogStatus.Archived })
         .orderBy('variants.createdAt', 'ASC')
         .addOrderBy('properties.order', 'ASC')
         .addOrderBy('images.sortOrder', 'ASC')
@@ -335,9 +399,9 @@ export class ProductRepository {
       await validateOrReject(resultInstance);
 
       integrationEvents.unshift(
-        this.createIntegrationEvent('product.updated', 'product', result.uuid, result.version, {
-          name: result.name,
-          status: 'active',
+        this.createIntegrationEvent('product.updated', 'product', productRow.uuid, productRow.version, {
+          name: productRow.name,
+          status: productRow.status,
         }),
       );
       await this.insertOutboxEvents(runner.manager, integrationEvents);
@@ -350,6 +414,54 @@ export class ProductRepository {
     } finally {
       await runner.release();
     }
+  }
+
+  private async syncVariantProperties(
+    manager: EntityManager,
+    variantUuid: string,
+    properties: UpdateProductDto['variants'][number]['properties'],
+  ) {
+    const existingUuids = properties.map((property) => property.uuid).filter((value): value is string => Boolean(value));
+    const duplicatePropertyUuid = this.findDuplicate(existingUuids);
+
+    if (duplicatePropertyUuid) {
+      throw new BadRequestException(`Variant property ${duplicatePropertyUuid} is duplicated in update payload`);
+    }
+
+    if (existingUuids.length > 0) {
+      const existingProperties = await manager
+        .createQueryBuilder(VariantPropertyModel, 'variantProperty')
+        .where('variantProperty.uuid IN (:...existingUuids)', { existingUuids })
+        .getMany();
+      const existingPropertyMap = new Map(existingProperties.map((property) => [property.uuid, property]));
+      const invalidPropertyUuid = existingUuids.find((propertyUuid) => existingPropertyMap.get(propertyUuid)?.variantUuid !== variantUuid);
+
+      if (invalidPropertyUuid) {
+        throw new BadRequestException(`Variant property ${invalidPropertyUuid} does not belong to variant ${variantUuid}`);
+      }
+    }
+
+    await manager
+      .createQueryBuilder()
+      .delete()
+      .from(VariantPropertyModel)
+      .where('variant_uuid = :variantUuid', { variantUuid })
+      .andWhere(existingUuids.length > 0 ? 'uuid NOT IN (:...existingUuids)' : '1=1', { existingUuids })
+      .execute();
+
+    await manager.upsert(
+      VariantPropertyModel,
+      properties.map((property, order) => {
+        return {
+          uuid: property?.uuid,
+          variantUuid,
+          propertyUuid: property.propertyUuid,
+          value: property.value,
+          order,
+        };
+      }),
+      ['uuid'],
+    );
   }
 
   private async syncVariantImages(manager: EntityManager, variantUuid: string, images: ProductVariantImage[] = []) {
@@ -426,5 +538,29 @@ export class ProductRepository {
 
   private insertOutboxEvents(manager: EntityManager, events: OutboxEventInput[]) {
     return this.outboxWriter.addMany(manager, events);
+  }
+
+  private expectSingleRaw<T>(rows: T[], message: string) {
+    const row = rows[0];
+
+    if (!row) {
+      throw new NotFoundException(message);
+    }
+
+    return row;
+  }
+
+  private findDuplicate(values: string[]) {
+    const seen = new Set<string>();
+
+    for (const value of values) {
+      if (seen.has(value)) {
+        return value;
+      }
+
+      seen.add(value);
+    }
+
+    return null;
   }
 }

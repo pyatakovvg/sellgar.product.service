@@ -9,6 +9,10 @@ export class PropertyGroupEntity {
   uuid: string;
 
   @Expose()
+  @IsNumber()
+  version: number;
+
+  @Expose()
   @IsString()
   name: string;
 

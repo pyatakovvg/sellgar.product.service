@@ -10,6 +10,9 @@ export class ImageModel {
   @Column({ name: 'file_name', type: 'varchar', length: 256 })
   fileName: string;
 
+  @Column({ name: 'version', type: 'int', default: 1 })
+  version: number;
+
   @OneToMany(() => VariantImageModel, (variantImage) => variantImage.image)
   variants: VariantImageModel[];
 }

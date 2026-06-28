@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 
 import * as uuid from 'uuid';
@@ -186,12 +186,18 @@ export class CategoryRepository {
     await runner.startTransaction();
 
     try {
-      const category = await runner.manager.findOne(CategoryModel, {
-        where: { uuid: dto.uuid },
-      });
+      const category = await runner.manager
+        .createQueryBuilder(CategoryModel, 'category')
+        .setLock('pessimistic_write')
+        .where('category.uuid = :uuid', { uuid: dto.uuid })
+        .getOne();
 
       if (!category) {
         throw new NotFoundException(`Category ${dto.uuid} not found`);
+      }
+
+      if (category.version !== dto.version) {
+        throw new ConflictException(`Category ${dto.uuid} was changed by another request`);
       }
 
       let parentUuid = category.uuid;
@@ -226,8 +232,10 @@ export class CategoryRepository {
         .set({
           name: dto.name,
           description: dto.description,
+          version: () => 'version + 1',
         })
         .where('uuid = :uuid', { uuid: category.uuid })
+        .andWhere('version = :version', { version: dto.version })
         .execute();
 
       await runner.manager

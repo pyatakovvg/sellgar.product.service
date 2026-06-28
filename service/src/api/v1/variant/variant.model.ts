@@ -11,6 +11,7 @@ import {
 } from 'typeorm';
 
 import { ProductModel } from '../product/product.model';
+import { CatalogStatus } from '../catalog/catalog-status.enum';
 import { VariantPropertyModel } from './variant-property.model';
 import { VariantImageModel } from './variant-image.model';
 
@@ -28,6 +29,15 @@ export class VariantModel {
 
   @Column({ name: 'version', type: 'int', default: 1 })
   version: number;
+
+  @Column({
+    name: 'status',
+    type: 'enum',
+    enum: CatalogStatus,
+    enumName: 'catalog_status_enum',
+    default: CatalogStatus.Active,
+  })
+  status: CatalogStatus;
 
   @Column({ name: 'product_uuid' })
   productUuid: string;

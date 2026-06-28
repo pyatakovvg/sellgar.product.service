@@ -11,6 +11,7 @@ import {
 } from 'typeorm';
 
 import { BrandModel } from '../brand/brand.model';
+import { CatalogStatus } from '../catalog/catalog-status.enum';
 import { CategoryModel } from '../category/category.model';
 import { VariantModel } from '../variant/variant.model';
 
@@ -28,6 +29,15 @@ export class ProductModel {
 
   @Column({ name: 'version', type: 'int', default: 1 })
   version: number;
+
+  @Column({
+    name: 'status',
+    type: 'enum',
+    enum: CatalogStatus,
+    enumName: 'catalog_status_enum',
+    default: CatalogStatus.Active,
+  })
+  status: CatalogStatus;
 
   @Column({ name: 'brand_uuid', type: 'uuid' })
   brandUuid: string;

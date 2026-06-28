@@ -13,6 +13,9 @@ export class PropertyGroupModel {
   @Column({ name: 'description', type: 'varchar', length: 1024 })
   description: string;
 
+  @Column({ name: 'version', type: 'int', default: 1 })
+  version: number;
+
   @OneToMany(() => PropertyModel, (property) => property.group)
   properties: PropertyModel[];
 

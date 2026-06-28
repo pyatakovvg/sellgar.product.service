@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 
 import * as uuid from 'uuid';
@@ -23,7 +23,7 @@ export class UnitRepository {
   async findAll() {
     const result = await this.dataSource
       .createQueryBuilder()
-      .select(['unit.uuid', 'unit.code', 'unit.name', 'unit.description', 'unit.createdAt', 'unit.updatedAt'])
+      .select(['unit.uuid', 'unit.version', 'unit.code', 'unit.name', 'unit.description', 'unit.createdAt', 'unit.updatedAt'])
       .from(UnitModel, 'unit')
       .orderBy('unit.createdAt', 'DESC')
       .getMany();
@@ -38,7 +38,7 @@ export class UnitRepository {
   async findByUuid(uuid: string) {
     const result = await this.dataSource
       .createQueryBuilder()
-      .select(['unit.uuid', 'unit.code', 'unit.name', 'unit.description', 'unit.createdAt', 'unit.updatedAt'])
+      .select(['unit.uuid', 'unit.version', 'unit.code', 'unit.name', 'unit.description', 'unit.createdAt', 'unit.updatedAt'])
       .from(UnitModel, 'unit')
       .where('unit.uuid = :uuid', { uuid })
       .getOneOrFail();
@@ -73,7 +73,7 @@ export class UnitRepository {
 
       const result = await runner.manager
         .createQueryBuilder()
-        .select(['unit.uuid', 'unit.code', 'unit.name', 'unit.description', 'unit.createdAt', 'unit.updatedAt'])
+        .select(['unit.uuid', 'unit.version', 'unit.code', 'unit.name', 'unit.description', 'unit.createdAt', 'unit.updatedAt'])
         .from(UnitModel, 'unit')
         .where('unit.uuid = :uuid', { uuid: newUuid })
         .getOneOrFail();
@@ -99,9 +99,21 @@ export class UnitRepository {
     await runner.connect();
     await runner.startTransaction();
 
-    console.log('Unit update dto:', dto);
-
     try {
+      const unit = await runner.manager
+        .createQueryBuilder(UnitModel, 'unit')
+        .setLock('pessimistic_write')
+        .where('unit.uuid = :uuid', { uuid: dto.uuid })
+        .getOne();
+
+      if (!unit) {
+        throw new NotFoundException(`Unit ${dto.uuid} not found`);
+      }
+
+      if (unit.version !== dto.version) {
+        throw new ConflictException(`Unit ${dto.uuid} was changed by another request`);
+      }
+
       await runner.manager
         .createQueryBuilder()
         .update(UnitModel)
@@ -109,20 +121,20 @@ export class UnitRepository {
           code: dto.code,
           name: dto.name,
           description: dto.description,
+          version: () => 'version + 1',
         })
-        .where('unit.uuid = :uuid', { uuid: dto.uuid })
+        .where('uuid = :uuid', { uuid: dto.uuid })
+        .andWhere('version = :version', { version: dto.version })
         .execute();
 
       const result = await runner.manager
         .createQueryBuilder()
-        .select(['unit.uuid', 'unit.code', 'unit.name', 'unit.description', 'unit.createdAt', 'unit.updatedAt'])
+        .select(['unit.uuid', 'unit.version', 'unit.code', 'unit.name', 'unit.description', 'unit.createdAt', 'unit.updatedAt'])
         .from(UnitModel, 'unit')
         .where('unit.uuid = :uuid', { uuid: dto.uuid })
         .getOneOrFail();
 
       await runner.commitTransaction();
-
-      console.log('Brand updated:', result);
 
       const instanceResult = plainToInstance(UnitEntity, result);
 

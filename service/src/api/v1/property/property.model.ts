@@ -38,6 +38,9 @@ export class PropertyModel {
   @Column({ name: 'type', type: 'enum', enum: PropertyTypeEnum })
   type: PropertyTypeEnum;
 
+  @Column({ name: 'version', type: 'int', default: 1 })
+  version: number;
+
   @Column({ name: 'group_uuid', type: 'uuid' })
   groupUuid: string;
 

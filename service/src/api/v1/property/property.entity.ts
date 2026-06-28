@@ -8,6 +8,10 @@ export class PropertyEntity {
   uuid: string;
 
   @Expose()
+  @IsNumber()
+  version: number;
+
+  @Expose()
   @IsUUID()
   @IsOptional()
   unitUuid: string | null;

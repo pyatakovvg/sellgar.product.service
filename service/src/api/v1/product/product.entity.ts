@@ -1,7 +1,8 @@
 import { Type, Expose } from 'class-transformer';
-import { IsUUID, IsString, IsOptional, ValidateNested, IsNumber, IsDate } from 'class-validator';
+import { IsUUID, IsString, IsOptional, ValidateNested, IsNumber, IsDate, IsEnum } from 'class-validator';
 
 import { BrandEntity } from '@/api/v1/brand/brand.entity';
+import { CatalogStatus } from '@/api/v1/catalog/catalog-status.enum';
 import { CategoryEntity } from '@/api/v1/category/category.entity';
 import { VariantEntity } from '@/api/v1/variant/variant.entity';
 
@@ -9,6 +10,10 @@ export class ProductEntity {
   @Expose()
   @IsUUID()
   uuid: string;
+
+  @Expose()
+  @IsNumber()
+  version: number;
 
   @Expose()
   @IsUUID()
@@ -25,6 +30,10 @@ export class ProductEntity {
   @Expose()
   @IsString()
   description: string;
+
+  @Expose()
+  @IsEnum(CatalogStatus)
+  status: CatalogStatus;
 
   @Expose()
   @ValidateNested()

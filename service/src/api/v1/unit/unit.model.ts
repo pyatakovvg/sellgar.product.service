@@ -14,6 +14,9 @@ export class UnitModel {
   @Column({ name: 'description', type: 'text' })
   description: string;
 
+  @Column({ name: 'version', type: 'int', default: 1 })
+  version: number;
+
   @CreateDateColumn({
     name: 'created_at',
     type: 'timestamp',
