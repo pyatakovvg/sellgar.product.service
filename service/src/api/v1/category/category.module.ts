@@ -7,9 +7,11 @@ import { CategoryController } from './controller/category.controller';
 
 import { CategoryModel } from './category.model';
 import { CategoryClosureModel } from './category-closure.model';
+import { CategoryImageModel } from './category-image.model';
+import { ImageModel } from '../image/image.model';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([CategoryModel, CategoryClosureModel])],
+  imports: [TypeOrmModule.forFeature([CategoryModel, CategoryClosureModel, CategoryImageModel, ImageModel])],
   controllers: [CategoryController],
   providers: [CategoryService, CategoryRepository],
 })

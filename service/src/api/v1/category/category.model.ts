@@ -2,6 +2,7 @@ import { Entity, PrimaryColumn, Column, OneToMany, CreateDateColumn, UpdateDateC
 
 import { ProductModel } from '../product/product.model';
 import { CategoryClosureModel } from './category-closure.model';
+import { CategoryImageModel } from './category-image.model';
 
 @Entity('category')
 export class CategoryModel {
@@ -33,6 +34,9 @@ export class CategoryModel {
 
   @OneToMany(() => ProductModel, (product) => product.categoryUuid)
   products: ProductModel[];
+
+  @OneToMany(() => CategoryImageModel, (categoryImage) => categoryImage.category)
+  images: CategoryImageModel[];
 
   @CreateDateColumn({
     name: 'created_at',

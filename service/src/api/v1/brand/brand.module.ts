@@ -6,9 +6,11 @@ import { BrandRepository } from './repository/brand.repository';
 import { BrandController } from './controller/brand.controller';
 
 import { BrandModel } from './brand.model';
+import { BrandImageModel } from './brand-image.model';
+import { ImageModel } from '../image/image.model';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([BrandModel])],
+  imports: [TypeOrmModule.forFeature([BrandModel, BrandImageModel, ImageModel])],
   controllers: [BrandController],
   providers: [BrandService, BrandRepository],
 })

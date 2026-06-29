@@ -2,16 +2,18 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { InjectDataSource } from '@nestjs/typeorm';
 
 import * as uuid from 'uuid';
-import { DataSource } from 'typeorm';
+import { DataSource, EntityManager } from 'typeorm';
 import { validateOrReject } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
 
-import { CreateCategoryDto } from './dto/create-category.dto';
+import { CategoryImageDto, CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 
 import { CategoryEntity } from '../category.entity';
 import { CategoryModel } from '../category.model';
 import { CategoryClosureModel } from '../category-closure.model';
+import { CategoryImageModel } from '../category-image.model';
+import { ImageModel } from '../../image/image.model';
 
 @Injectable()
 export class CategoryRepository {
@@ -29,6 +31,7 @@ export class CategoryRepository {
     if (result.descendant.uuid === result.ancestor.uuid) {
       return {
         ...result.descendant,
+        image: await this.findCategoryImage(this.dataSource.manager, result.descendant.uuid),
         parentUuid: null,
         parent: null,
       };
@@ -36,6 +39,7 @@ export class CategoryRepository {
 
     return {
       ...result.descendant,
+      image: await this.findCategoryImage(this.dataSource.manager, result.descendant.uuid),
       parentUuid: result.ancestor.uuid,
       parent: result.ancestor,
     };
@@ -60,10 +64,23 @@ export class CategoryRepository {
         .getMany();
 
       const allCategories = await this.dataSource.createQueryBuilder(CategoryModel, 'category').getMany();
+      const categoryImages = await this.dataSource
+        .createQueryBuilder(CategoryImageModel, 'categoryImage')
+        .leftJoinAndSelect('categoryImage.image', 'image')
+        .orderBy('categoryImage.sortOrder', 'ASC')
+        .getMany();
+      const categoryImagesByCategoryUuid = new Map<string, CategoryImageModel>();
+
+      categoryImages.forEach((image) => {
+        if (!categoryImagesByCategoryUuid.has(image.categoryUuid)) {
+          categoryImagesByCategoryUuid.set(image.categoryUuid, image);
+        }
+      });
 
       allCategories.forEach((category) => {
         categoryMap.set(category.uuid, {
           ...category,
+          image: categoryImagesByCategoryUuid.get(category.uuid) ?? null,
           children: [],
         });
       });
@@ -136,6 +153,8 @@ export class CategoryRepository {
         })
         .execute();
 
+      await this.syncCategoryImage(runner.manager, newUuid, dto.image);
+
       const createdCategory = await runner.manager
         .createQueryBuilder(CategoryModel, 'category')
         .select()
@@ -162,6 +181,7 @@ export class CategoryRepository {
       const isRoot = newCategory.ancestor.uuid === newCategory.descendant.uuid;
       const category = plainToInstance(CategoryEntity, {
         ...newCategory.descendant,
+        image: await this.findCategoryImage(runner.manager, newUuid),
         parentUuid: isRoot ? null : newCategory.ancestor.uuid,
         parent: isRoot ? null : newCategory.ancestor,
       });
@@ -238,6 +258,8 @@ export class CategoryRepository {
         .andWhere('version = :version', { version: dto.version })
         .execute();
 
+      await this.syncCategoryImage(runner.manager, category.uuid, dto.image);
+
       await runner.manager
         .createQueryBuilder()
         .update(CategoryClosureModel)
@@ -258,9 +280,12 @@ export class CategoryRepository {
       const isRoot = newCategory.ancestor.uuid === newCategory.descendant.uuid;
       const updatedCategory = plainToInstance(CategoryEntity, {
         ...newCategory.descendant,
+        image: await this.findCategoryImage(runner.manager, category.uuid),
         parentUuid: isRoot ? null : newCategory.ancestor.uuid,
         parent: isRoot ? null : newCategory.ancestor,
       });
+
+      await validateOrReject(updatedCategory);
 
       await runner.commitTransaction();
 
@@ -275,5 +300,68 @@ export class CategoryRepository {
 
   remove(uuid: string) {
     return `This action removes a #${uuid} category`;
+  }
+
+  private async findCategoryImage(manager: EntityManager, categoryUuid: string) {
+    return await manager
+      .createQueryBuilder(CategoryImageModel, 'categoryImage')
+      .leftJoinAndSelect('categoryImage.image', 'image')
+      .where('categoryImage.categoryUuid = :categoryUuid', { categoryUuid })
+      .orderBy('categoryImage.sortOrder', 'ASC')
+      .getOne();
+  }
+
+  private async syncCategoryImage(manager: EntityManager, categoryUuid: string, image?: CategoryImageDto | null) {
+    await manager
+      .createQueryBuilder()
+      .delete()
+      .from(CategoryImageModel)
+      .where('category_uuid = :categoryUuid', { categoryUuid })
+      .execute();
+
+    if (!image?.imageUuid) {
+      return;
+    }
+
+    await this.ensureImage(manager, image.imageUuid, image.fileName);
+
+    await manager
+      .createQueryBuilder()
+      .insert()
+      .into(CategoryImageModel)
+      .values({
+        uuid: uuid.v4(),
+        categoryUuid,
+        imageUuid: image.imageUuid,
+        sortOrder: 0,
+        isPrimary: true,
+        alt: image.alt ?? null,
+      })
+      .execute();
+  }
+
+  private async ensureImage(manager: EntityManager, imageUuid: string, fileName?: string) {
+    const imageExists = await manager
+      .createQueryBuilder(ImageModel, 'image')
+      .where('image.uuid = :uuid', { uuid: imageUuid })
+      .getExists();
+
+    if (imageExists) {
+      return;
+    }
+
+    if (!fileName) {
+      throw new NotFoundException(`Image ${imageUuid} not found`);
+    }
+
+    await manager
+      .createQueryBuilder()
+      .insert()
+      .into(ImageModel)
+      .values({
+        uuid: imageUuid,
+        fileName,
+      })
+      .execute();
   }
 }

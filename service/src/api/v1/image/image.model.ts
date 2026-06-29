@@ -1,6 +1,8 @@
 import { Column, Entity, OneToMany, PrimaryColumn } from 'typeorm';
 
 import { VariantImageModel } from '../variant/variant-image.model';
+import { BrandImageModel } from '../brand/brand-image.model';
+import { CategoryImageModel } from '../category/category-image.model';
 
 @Entity('image')
 export class ImageModel {
@@ -15,4 +17,10 @@ export class ImageModel {
 
   @OneToMany(() => VariantImageModel, (variantImage) => variantImage.image)
   variants: VariantImageModel[];
+
+  @OneToMany(() => BrandImageModel, (brandImage) => brandImage.image)
+  brands: BrandImageModel[];
+
+  @OneToMany(() => CategoryImageModel, (categoryImage) => categoryImage.image)
+  categories: CategoryImageModel[];
 }

@@ -2,13 +2,15 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { InjectDataSource } from '@nestjs/typeorm';
 
 import * as uuid from 'uuid';
-import { DataSource } from 'typeorm';
+import { DataSource, EntityManager } from 'typeorm';
 import { validateOrReject } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
 
 import { BrandModel } from '../brand.model';
+import { BrandImageModel } from '../brand-image.model';
+import { ImageModel } from '../../image/image.model';
 
-import { CreateBrandDto } from './dto/create-brand.dto';
+import { BrandImageDto, CreateBrandDto } from './dto/create-brand.dto';
 import { UpdateBrandDto } from './dto/update-brand.dto';
 
 import { BrandEntity } from '../brand.entity';
@@ -23,13 +25,14 @@ export class BrandRepository {
 
   async findAll() {
     const result = await this.dataSource
-      .createQueryBuilder()
-      .select(['brand.uuid', 'brand.version', 'brand.code', 'brand.name', 'brand.description', 'brand.createdAt', 'brand.updatedAt'])
-      .from(BrandModel, 'brand')
+      .createQueryBuilder(BrandModel, 'brand')
+      .leftJoinAndSelect('brand.images', 'brandImage')
+      .leftJoinAndSelect('brandImage.image', 'image')
       .orderBy('brand.createdAt', 'DESC')
+      .addOrderBy('brandImage.sortOrder', 'ASC')
       .getMany();
 
-    const resultInstance = result.map((entity) => plainToInstance(BrandEntity, entity));
+    const resultInstance = result.map((entity) => this.toBrandEntity(entity));
 
     await Promise.all(resultInstance.map((entity) => validateOrReject(entity)));
 
@@ -38,13 +41,14 @@ export class BrandRepository {
 
   async findByUuid(uuid: string) {
     const result = await this.dataSource
-      .createQueryBuilder()
-      .select(['brand.uuid', 'brand.version', 'brand.code', 'brand.name', 'brand.description', 'brand.createdAt', 'brand.updatedAt'])
-      .from(BrandModel, 'brand')
+      .createQueryBuilder(BrandModel, 'brand')
+      .leftJoinAndSelect('brand.images', 'brandImage')
+      .leftJoinAndSelect('brandImage.image', 'image')
       .where('brand.uuid = :uuid', { uuid })
+      .orderBy('brandImage.sortOrder', 'ASC')
       .getOneOrFail();
 
-    const resultInstance = plainToInstance(BrandEntity, result);
+    const resultInstance = this.toBrandEntity(result);
 
     await validateOrReject(resultInstance);
 
@@ -72,14 +76,17 @@ export class BrandRepository {
         })
         .execute();
 
+      await this.syncBrandImage(runner.manager, newUuid, createBrandDto.image);
+
       const result = await runner.manager
-        .createQueryBuilder()
-        .select(['brand.uuid', 'brand.version', 'brand.code', 'brand.name', 'brand.description', 'brand.createdAt', 'brand.updatedAt'])
-        .from(BrandModel, 'brand')
+        .createQueryBuilder(BrandModel, 'brand')
+        .leftJoinAndSelect('brand.images', 'brandImage')
+        .leftJoinAndSelect('brandImage.image', 'image')
         .where('brand.uuid = :uuid', { uuid: newUuid })
+        .orderBy('brandImage.sortOrder', 'ASC')
         .getOneOrFail();
 
-      const instanceResult = plainToInstance(BrandEntity, result);
+      const instanceResult = this.toBrandEntity(result);
 
       await validateOrReject(instanceResult);
       await runner.commitTransaction();
@@ -127,14 +134,17 @@ export class BrandRepository {
         .andWhere('version = :version', { version: dto.version })
         .execute();
 
+      await this.syncBrandImage(runner.manager, dto.uuid, dto.image);
+
       const result = await runner.manager
-        .createQueryBuilder()
-        .select(['brand.uuid', 'brand.version', 'brand.code', 'brand.name', 'brand.description', 'brand.createdAt', 'brand.updatedAt'])
-        .from(BrandModel, 'brand')
+        .createQueryBuilder(BrandModel, 'brand')
+        .leftJoinAndSelect('brand.images', 'brandImage')
+        .leftJoinAndSelect('brandImage.image', 'image')
         .where('brand.uuid = :uuid', { uuid: dto.uuid })
+        .orderBy('brandImage.sortOrder', 'ASC')
         .getOneOrFail();
 
-      const instanceResult = plainToInstance(BrandEntity, result);
+      const instanceResult = this.toBrandEntity(result);
 
       await validateOrReject(instanceResult);
       await runner.commitTransaction();
@@ -150,5 +160,63 @@ export class BrandRepository {
 
   remove(id: number) {
     return `This action removes a #${id} category`;
+  }
+
+  private toBrandEntity(model: BrandModel) {
+    const { images, ...brand } = model;
+
+    return plainToInstance(BrandEntity, {
+      ...brand,
+      image: images?.[0] ?? null,
+    });
+  }
+
+  private async syncBrandImage(manager: EntityManager, brandUuid: string, image?: BrandImageDto | null) {
+    await manager.createQueryBuilder().delete().from(BrandImageModel).where('brand_uuid = :brandUuid', { brandUuid }).execute();
+
+    if (!image?.imageUuid) {
+      return;
+    }
+
+    await this.ensureImage(manager, image.imageUuid, image.fileName);
+
+    await manager
+      .createQueryBuilder()
+      .insert()
+      .into(BrandImageModel)
+      .values({
+        uuid: uuid.v4(),
+        brandUuid,
+        imageUuid: image.imageUuid,
+        sortOrder: 0,
+        isPrimary: true,
+        alt: image.alt ?? null,
+      })
+      .execute();
+  }
+
+  private async ensureImage(manager: EntityManager, imageUuid: string, fileName?: string) {
+    const imageExists = await manager
+      .createQueryBuilder(ImageModel, 'image')
+      .where('image.uuid = :uuid', { uuid: imageUuid })
+      .getExists();
+
+    if (imageExists) {
+      return;
+    }
+
+    if (!fileName) {
+      throw new NotFoundException(`Image ${imageUuid} not found`);
+    }
+
+    await manager
+      .createQueryBuilder()
+      .insert()
+      .into(ImageModel)
+      .values({
+        uuid: imageUuid,
+        fileName,
+      })
+      .execute();
   }
 }
