@@ -12,6 +12,7 @@ import {
 import { UnitModel } from '../unit/unit.model';
 import { VariantPropertyModel } from '../variant/variant-property.model';
 import { PropertyGroupModel } from '../property-group/property-group.model';
+import { ProductPropertyModel } from '../product/product-property.model';
 
 export enum PropertyTypeEnum {
   'TEXT' = 'TEXT',
@@ -57,6 +58,9 @@ export class PropertyModel {
 
   @OneToMany(() => VariantPropertyModel, (variantProperty) => variantProperty.property)
   variants: VariantPropertyModel[];
+
+  @OneToMany(() => ProductPropertyModel, (productProperty) => productProperty.property)
+  products: ProductPropertyModel[];
 
   @CreateDateColumn({
     name: 'created_at',

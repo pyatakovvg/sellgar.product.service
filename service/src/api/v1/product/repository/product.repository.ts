@@ -11,6 +11,7 @@ import { CreateProductDto, ProductVariantImage } from './dto/create-product.dto'
 import { UpdateProductDto } from './dto/update-product.dto';
 
 import { ProductModel } from '../product.model';
+import { ProductPropertyModel } from '../product-property.model';
 
 import { CatalogStatus } from '../../catalog/catalog-status.enum';
 import { ProductEntity } from '../product.entity';
@@ -53,6 +54,9 @@ export class ProductRepository {
       .createQueryBuilder(ProductModel, 'product')
       .leftJoinAndSelect('product.brand', 'brand')
       .leftJoinAndSelect('product.category', 'category')
+      .leftJoinAndSelect('product.properties', 'productProperties')
+      .leftJoinAndSelect('productProperties.property', 'productProperty')
+      .leftJoinAndSelect('productProperty.unit', 'productPropertyUnit')
       .leftJoinAndSelect('product.variants', 'variants', 'variants.status != :archivedVariantStatus', {
         archivedVariantStatus: CatalogStatus.Archived,
       })
@@ -63,6 +67,7 @@ export class ProductRepository {
       .leftJoinAndSelect('images.image', 'image')
       .where('product.status != :archivedProductStatus', { archivedProductStatus: CatalogStatus.Archived })
       .orderBy('product.createdAt', 'DESC')
+      .addOrderBy('productProperties.order', 'ASC')
       .addOrderBy('variants.createdAt', 'ASC')
       .addOrderBy('properties.order', 'ASC')
       .addOrderBy('images.sortOrder', 'ASC')
@@ -84,6 +89,9 @@ export class ProductRepository {
       .createQueryBuilder(ProductModel, 'product')
       .leftJoinAndSelect('product.brand', 'brand')
       .leftJoinAndSelect('product.category', 'category')
+      .leftJoinAndSelect('product.properties', 'productProperties')
+      .leftJoinAndSelect('productProperties.property', 'productProperty')
+      .leftJoinAndSelect('productProperty.unit', 'productPropertyUnit')
       .leftJoinAndSelect('product.variants', 'variants', 'variants.status != :archivedVariantStatus', {
         archivedVariantStatus: CatalogStatus.Archived,
       })
@@ -94,7 +102,8 @@ export class ProductRepository {
       .leftJoinAndSelect('images.image', 'image')
       .where('product.uuid = :uuid', { uuid })
       .andWhere('product.status != :archivedProductStatus', { archivedProductStatus: CatalogStatus.Archived })
-      .orderBy('variants.createdAt', 'ASC')
+      .orderBy('productProperties.order', 'ASC')
+      .addOrderBy('variants.createdAt', 'ASC')
       .addOrderBy('properties.order', 'ASC')
       .addOrderBy('images.sortOrder', 'ASC')
       .getOneOrFail();
@@ -117,6 +126,9 @@ export class ProductRepository {
 
     try {
       const newUuid = uuid.v4();
+      const productProperties = dto.properties ?? [];
+
+      this.validatePropertyPayload(productProperties, dto.variants);
 
       await runner.manager
         .createQueryBuilder()
@@ -131,6 +143,8 @@ export class ProductRepository {
           status: CatalogStatus.Active,
         })
         .execute();
+
+      await this.syncProductProperties(runner.manager, newUuid, productProperties);
 
       integrationEvents.push(
         this.createIntegrationEvent('product.created', 'product', newUuid, 1, {
@@ -178,6 +192,9 @@ export class ProductRepository {
         .createQueryBuilder(ProductModel, 'product')
         .leftJoinAndSelect('product.brand', 'brand')
         .leftJoinAndSelect('product.category', 'category')
+        .leftJoinAndSelect('product.properties', 'productProperties')
+        .leftJoinAndSelect('productProperties.property', 'productProperty')
+        .leftJoinAndSelect('productProperty.unit', 'productPropertyUnit')
         .leftJoinAndSelect('product.variants', 'variants', 'variants.status != :archivedVariantStatus', {
           archivedVariantStatus: CatalogStatus.Archived,
         })
@@ -187,7 +204,8 @@ export class ProductRepository {
         .leftJoinAndSelect('variants.images', 'images')
         .leftJoinAndSelect('images.image', 'image')
         .where('product.uuid = :uuid', { uuid: newUuid })
-        .orderBy('variants.createdAt', 'ASC')
+        .orderBy('productProperties.order', 'ASC')
+        .addOrderBy('variants.createdAt', 'ASC')
         .addOrderBy('properties.order', 'ASC')
         .addOrderBy('images.sortOrder', 'ASC')
         .getOneOrFail();
@@ -232,6 +250,10 @@ export class ProductRepository {
         throw new ConflictException(`Product ${dto.uuid} was changed by another request`);
       }
 
+      const productProperties = dto.properties ?? [];
+
+      this.validatePropertyPayload(productProperties, dto.variants);
+
       const previousVariants = await runner.manager
         .createQueryBuilder(VariantModel, 'variant')
         .setLock('pessimistic_write')
@@ -275,6 +297,8 @@ export class ProductRepository {
         (variant) => variant.status !== CatalogStatus.Archived && !incomingVariantUuids.includes(variant.uuid),
       );
       const productRow = this.expectSingleRaw<ProductUpdateRow>(productUpdateResult.raw, `Product ${dto.uuid} not found`);
+
+      await this.syncProductProperties(runner.manager, dto.uuid, productProperties);
 
       if (removedVariants.length > 0) {
         const archiveResult = await runner.manager
@@ -377,6 +401,9 @@ export class ProductRepository {
         .createQueryBuilder(ProductModel, 'product')
         .leftJoinAndSelect('product.brand', 'brand')
         .leftJoinAndSelect('product.category', 'category')
+        .leftJoinAndSelect('product.properties', 'productProperties')
+        .leftJoinAndSelect('productProperties.property', 'productProperty')
+        .leftJoinAndSelect('productProperty.unit', 'productPropertyUnit')
         .leftJoinAndSelect('product.variants', 'variants', 'variants.status != :archivedVariantStatus', {
           archivedVariantStatus: CatalogStatus.Archived,
         })
@@ -387,7 +414,8 @@ export class ProductRepository {
         .leftJoinAndSelect('images.image', 'image')
         .where('product.uuid = :uuid', { uuid: dto.uuid })
         .andWhere('product.status != :archivedProductStatus', { archivedProductStatus: CatalogStatus.Archived })
-        .orderBy('variants.createdAt', 'ASC')
+        .orderBy('productProperties.order', 'ASC')
+        .addOrderBy('variants.createdAt', 'ASC')
         .addOrderBy('properties.order', 'ASC')
         .addOrderBy('images.sortOrder', 'ASC')
         .getOneOrFail();
@@ -414,6 +442,58 @@ export class ProductRepository {
     } finally {
       await runner.release();
     }
+  }
+
+  private async syncProductProperties(
+    manager: EntityManager,
+    productUuid: string,
+    properties: NonNullable<CreateProductDto['properties']>,
+  ) {
+    const existingUuids = properties.map((property) => property.uuid).filter((value): value is string => Boolean(value));
+    const duplicatePropertyUuid = this.findDuplicate(existingUuids);
+
+    if (duplicatePropertyUuid) {
+      throw new BadRequestException(`Product property ${duplicatePropertyUuid} is duplicated in update payload`);
+    }
+
+    if (existingUuids.length > 0) {
+      const existingProperties = await manager
+        .createQueryBuilder(ProductPropertyModel, 'productProperty')
+        .where('productProperty.uuid IN (:...existingUuids)', { existingUuids })
+        .getMany();
+      const existingPropertyMap = new Map(existingProperties.map((property) => [property.uuid, property]));
+      const invalidPropertyUuid = existingUuids.find((propertyUuid) => existingPropertyMap.get(propertyUuid)?.productUuid !== productUuid);
+
+      if (invalidPropertyUuid) {
+        throw new BadRequestException(`Product property ${invalidPropertyUuid} does not belong to product ${productUuid}`);
+      }
+    }
+
+    await manager
+      .createQueryBuilder()
+      .delete()
+      .from(ProductPropertyModel)
+      .where('product_uuid = :productUuid', { productUuid })
+      .andWhere(existingUuids.length > 0 ? 'uuid NOT IN (:...existingUuids)' : '1=1', { existingUuids })
+      .execute();
+
+    if (properties.length === 0) {
+      return;
+    }
+
+    await manager.upsert(
+      ProductPropertyModel,
+      properties.map((property, order) => {
+        return {
+          uuid: property?.uuid,
+          productUuid,
+          propertyUuid: property.propertyUuid,
+          value: property.value,
+          order,
+        };
+      }),
+      ['uuid'],
+    );
   }
 
   private async syncVariantProperties(
@@ -448,6 +528,10 @@ export class ProductRepository {
       .where('variant_uuid = :variantUuid', { variantUuid })
       .andWhere(existingUuids.length > 0 ? 'uuid NOT IN (:...existingUuids)' : '1=1', { existingUuids })
       .execute();
+
+    if (properties.length === 0) {
+      return;
+    }
 
     await manager.upsert(
       VariantPropertyModel,
@@ -515,6 +599,36 @@ export class ProductRepository {
           alt: image.alt ?? null,
         })
         .execute();
+    }
+  }
+
+  private validatePropertyPayload(
+    productProperties: NonNullable<CreateProductDto['properties']>,
+    variants: CreateProductDto['variants'],
+  ) {
+    const duplicateProductPropertyUuid = this.findDuplicate(productProperties.map((property) => property.propertyUuid));
+
+    if (duplicateProductPropertyUuid) {
+      throw new BadRequestException(`Product property ${duplicateProductPropertyUuid} is duplicated in payload`);
+    }
+
+    const productPropertyUuids = new Set(productProperties.map((property) => property.propertyUuid));
+
+    for (const [index, variant] of variants.entries()) {
+      const variantPropertyUuids = variant.properties.map((property) => property.propertyUuid);
+      const duplicateVariantPropertyUuid = this.findDuplicate(variantPropertyUuids);
+
+      if (duplicateVariantPropertyUuid) {
+        throw new BadRequestException(`Variant property ${duplicateVariantPropertyUuid} is duplicated in variant ${index}`);
+      }
+
+      const conflictingPropertyUuid = variantPropertyUuids.find((propertyUuid) => productPropertyUuids.has(propertyUuid));
+
+      if (conflictingPropertyUuid) {
+        throw new BadRequestException(
+          `Property ${conflictingPropertyUuid} cannot be used both on product and variant ${index}`,
+        );
+      }
     }
   }
 

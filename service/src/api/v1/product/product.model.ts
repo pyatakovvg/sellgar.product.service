@@ -14,6 +14,7 @@ import { BrandModel } from '../brand/brand.model';
 import { CatalogStatus } from '../catalog/catalog-status.enum';
 import { CategoryModel } from '../category/category.model';
 import { VariantModel } from '../variant/variant.model';
+import { ProductPropertyModel } from './product-property.model';
 
 @Entity('product')
 export class ProductModel {
@@ -55,6 +56,9 @@ export class ProductModel {
 
   @OneToMany(() => VariantModel, (variant) => variant.product)
   variants: VariantModel[];
+
+  @OneToMany(() => ProductPropertyModel, (productProperty) => productProperty.product)
+  properties: ProductPropertyModel[];
 
   @CreateDateColumn({
     name: 'created_at',
