@@ -1,4 +1,4 @@
-import { IsBoolean, IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class AddVariantImageDto {
   @IsUUID()
@@ -13,11 +13,7 @@ export class AddVariantImageDto {
 
   @IsNumber()
   @IsOptional()
-  sortOrder?: number;
-
-  @IsBoolean()
-  @IsOptional()
-  isPrimary?: boolean;
+  order?: number;
 
   @IsString()
   @IsOptional()

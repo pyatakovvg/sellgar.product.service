@@ -27,11 +27,8 @@ export class VariantImageModel {
   })
   image: ImageModel;
 
-  @Column({ name: 'sort_order', type: 'int', default: 0 })
-  sortOrder: number;
-
-  @Column({ name: 'is_primary', type: 'boolean', default: false })
-  isPrimary: boolean;
+  @Column({ name: 'order', type: 'int', default: 0 })
+  order: number;
 
   @Column({ name: 'alt', type: 'varchar', length: 256, nullable: true })
   alt?: string | null;

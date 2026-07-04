@@ -42,7 +42,7 @@ export class VariantRepository {
       .orderBy('product.createdAt', 'DESC')
       .addOrderBy('variant.createdAt', 'ASC')
       .addOrderBy('properties.order', 'ASC')
-      .addOrderBy('images.sortOrder', 'ASC')
+      .addOrderBy('images.order', 'ASC')
       .getMany();
 
     const resultInstance = result.map((entity) =>
@@ -71,7 +71,7 @@ export class VariantRepository {
       .andWhere('variant.status != :archivedStatus', { archivedStatus: CatalogStatus.Archived })
       .orderBy('variant.createdAt', 'ASC')
       .addOrderBy('properties.order', 'ASC')
-      .addOrderBy('images.sortOrder', 'ASC')
+      .addOrderBy('images.order', 'ASC')
       .getOneOrFail();
 
     const resultInstance = plainToInstance(VariantEntity, result, {
@@ -215,29 +215,13 @@ export class VariantRepository {
         .andWhere('variantImage.imageUuid = :imageUuid', { imageUuid: dto.imageUuid })
         .getOne();
 
-      const hasImages = await runner.manager
-        .createQueryBuilder(VariantImageModel, 'variantImage')
-        .where('variantImage.variantUuid = :variantUuid', { variantUuid: dto.variantUuid })
-        .getExists();
-
-      const shouldBePrimary = dto.isPrimary ?? !hasImages;
-
-      if (shouldBePrimary) {
-        await runner.manager
-          .createQueryBuilder()
-          .update(VariantImageModel)
-          .set({ isPrimary: false })
-          .where('variant_uuid = :variantUuid', { variantUuid: dto.variantUuid })
-          .execute();
-      }
-
-      const sortOrder =
-        dto.sortOrder ??
-        existing?.sortOrder ??
+      const order =
+        dto.order ??
+        existing?.order ??
         ((await runner.manager
           .createQueryBuilder(VariantImageModel, 'variantImage')
           .where('variantImage.variantUuid = :variantUuid', { variantUuid: dto.variantUuid })
-          .select('COALESCE(MAX(variantImage.sortOrder), -1)', 'max')
+          .select('COALESCE(MAX(variantImage.order), -1)', 'max')
           .getRawOne()
           .then((row) => Number(row.max))) + 1);
 
@@ -246,8 +230,7 @@ export class VariantRepository {
           .createQueryBuilder()
           .update(VariantImageModel)
           .set({
-            sortOrder,
-            isPrimary: shouldBePrimary,
+            order,
             alt: dto.alt ?? existing.alt,
           })
           .where('uuid = :uuid', { uuid: existing.uuid })
@@ -260,8 +243,7 @@ export class VariantRepository {
           .values({
             variantUuid: dto.variantUuid,
             imageUuid: dto.imageUuid,
-            sortOrder,
-            isPrimary: shouldBePrimary,
+            order,
             alt: dto.alt ?? null,
           })
           .execute();
@@ -301,23 +283,6 @@ export class VariantRepository {
         .from(VariantImageModel)
         .where('uuid = :uuid', { uuid: existing.uuid })
         .execute();
-
-      if (existing.isPrimary) {
-        const nextPrimary = await runner.manager
-          .createQueryBuilder(VariantImageModel, 'variantImage')
-          .where('variantImage.variantUuid = :variantUuid', { variantUuid })
-          .orderBy('variantImage.sortOrder', 'ASC')
-          .getOne();
-
-        if (nextPrimary) {
-          await runner.manager
-            .createQueryBuilder()
-            .update(VariantImageModel)
-            .set({ isPrimary: true })
-            .where('uuid = :uuid', { uuid: nextPrimary.uuid })
-            .execute();
-        }
-      }
 
       await runner.commitTransaction();
 

@@ -1,5 +1,5 @@
 import { Type, Expose } from 'class-transformer';
-import { IsUUID, IsString, ValidateNested, IsNumber, IsDate, IsOptional, IsBoolean, IsEnum } from 'class-validator';
+import { IsUUID, IsString, ValidateNested, IsNumber, IsDate, IsOptional, IsEnum } from 'class-validator';
 
 import { ProductEntity } from '../product/product.entity';
 import { CatalogStatus } from '@/api/v1/catalog/catalog-status.enum';
@@ -45,11 +45,7 @@ export class VariantImageEntity {
 
   @Expose()
   @IsNumber()
-  sortOrder: number;
-
-  @Expose()
-  @IsBoolean()
-  isPrimary: boolean;
+  order: number;
 
   @Expose()
   @IsString()

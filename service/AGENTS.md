@@ -9,7 +9,7 @@
 - `src/main.ts` - RMQ command queue и event queue bootstrap.
 - `src/app.module.ts` - `ConfigModule`, PostgreSQL через TypeORM, `ApiV1Module`.
 - `src/api/v1/product`, `variant`, `category`, `property`, `property-group`, `brand`, `image` - каталог и его структура.
-- `src/api/v1/variant/variant-image.model.ts` - связь изображения с вариантом товара, включая порядок и primary-флаг.
+- `src/api/v1/variant/variant-image.model.ts` - связь изображения с вариантом товара, включая порядок.
 - `@sellgar/outbox` подключается из `library/sellgar.outbox.library` через workspace-зависимость и отвечает за общую механику transactional outbox.
 
 ## Правила изменений

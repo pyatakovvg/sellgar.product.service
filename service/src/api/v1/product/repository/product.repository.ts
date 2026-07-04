@@ -70,7 +70,7 @@ export class ProductRepository {
       .addOrderBy('productProperties.order', 'ASC')
       .addOrderBy('variants.createdAt', 'ASC')
       .addOrderBy('properties.order', 'ASC')
-      .addOrderBy('images.sortOrder', 'ASC')
+      .addOrderBy('images.order', 'ASC')
       .getMany();
 
     const resultInstance = result.map((entity) =>
@@ -105,7 +105,7 @@ export class ProductRepository {
       .orderBy('productProperties.order', 'ASC')
       .addOrderBy('variants.createdAt', 'ASC')
       .addOrderBy('properties.order', 'ASC')
-      .addOrderBy('images.sortOrder', 'ASC')
+      .addOrderBy('images.order', 'ASC')
       .getOneOrFail();
 
     const resultInstance = plainToInstance(ProductEntity, result, {
@@ -207,7 +207,7 @@ export class ProductRepository {
         .orderBy('productProperties.order', 'ASC')
         .addOrderBy('variants.createdAt', 'ASC')
         .addOrderBy('properties.order', 'ASC')
-        .addOrderBy('images.sortOrder', 'ASC')
+        .addOrderBy('images.order', 'ASC')
         .getOneOrFail();
 
       const resultInstance = plainToInstance(ProductEntity, result, {
@@ -417,7 +417,7 @@ export class ProductRepository {
         .orderBy('productProperties.order', 'ASC')
         .addOrderBy('variants.createdAt', 'ASC')
         .addOrderBy('properties.order', 'ASC')
-        .addOrderBy('images.sortOrder', 'ASC')
+        .addOrderBy('images.order', 'ASC')
         .getOneOrFail();
 
       const resultInstance = plainToInstance(ProductEntity, result, {
@@ -594,8 +594,7 @@ export class ProductRepository {
         .values({
           variantUuid,
           imageUuid: image.imageUuid,
-          sortOrder: index,
-          isPrimary: index === 0,
+          order: image.order ?? index,
           alt: image.alt ?? null,
         })
         .execute();
