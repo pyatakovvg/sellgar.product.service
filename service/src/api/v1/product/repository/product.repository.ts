@@ -594,7 +594,7 @@ export class ProductRepository {
         .values({
           variantUuid,
           imageUuid: image.imageUuid,
-          order: image.order ?? index,
+          order: index,
           alt: image.alt ?? null,
         })
         .execute();
