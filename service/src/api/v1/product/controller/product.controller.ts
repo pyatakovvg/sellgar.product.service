@@ -11,8 +11,8 @@ export class ProductController {
   constructor(private readonly productService: ProductService) {}
 
   @MessagePattern({ cmd: 'product.getAll' })
-  findAll() {
-    return this.productService.findAll();
+  findAll(@Payload() query?: Record<string, unknown>) {
+    return this.productService.findAll(query);
   }
 
   @MessagePattern({ cmd: 'product.getByUuid' })

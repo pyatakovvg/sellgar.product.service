@@ -35,6 +35,8 @@ type VariantUpdateRow = {
   status: CatalogStatus;
 };
 
+type ProductQuery = Record<string, unknown> | undefined;
+
 @Injectable()
 export class ProductRepository {
   constructor(
@@ -42,15 +44,17 @@ export class ProductRepository {
     private readonly outboxWriter: OutboxWriter,
   ) {}
 
-  count() {
-    return this.dataSource
-      .createQueryBuilder(ProductModel, 'product')
-      .where('product.status != :archivedStatus', { archivedStatus: CatalogStatus.Archived })
-      .getCount();
+  count(query?: ProductQuery) {
+    return this.applyProductFilters(
+      this.dataSource
+        .createQueryBuilder(ProductModel, 'product')
+        .where('product.status != :archivedStatus', { archivedStatus: CatalogStatus.Archived }),
+      query,
+    ).getCount();
   }
 
-  async findAll() {
-    const result = await this.dataSource
+  async findAll(query?: ProductQuery) {
+    const builder = this.dataSource
       .createQueryBuilder(ProductModel, 'product')
       .leftJoinAndSelect('product.brand', 'brand')
       .leftJoinAndSelect('product.category', 'category')
@@ -65,7 +69,9 @@ export class ProductRepository {
       .leftJoinAndSelect('property.unit', 'unit')
       .leftJoinAndSelect('variants.images', 'images')
       .leftJoinAndSelect('images.image', 'image')
-      .where('product.status != :archivedProductStatus', { archivedProductStatus: CatalogStatus.Archived })
+      .where('product.status != :archivedProductStatus', { archivedProductStatus: CatalogStatus.Archived });
+
+    const result = await this.applyProductFilters(builder, query)
       .orderBy('product.createdAt', 'DESC')
       .addOrderBy('productProperties.order', 'ASC')
       .addOrderBy('variants.createdAt', 'ASC')
@@ -82,6 +88,34 @@ export class ProductRepository {
     await Promise.all(resultInstance.map((entity) => validateOrReject(entity)));
 
     return resultInstance;
+  }
+
+  private applyProductFilters<T extends { andWhere: (...args: any[]) => T }>(builder: T, query?: ProductQuery) {
+    const uuid = this.stringListFilter(query?.uuid ?? query?.productUuid);
+    const brandUuid = this.stringListFilter(query?.brandUuid);
+    const categoryUuid = this.stringListFilter(query?.categoryUuid);
+
+    if (uuid.length > 0) {
+      builder.andWhere('product.uuid IN (:...uuid)', { uuid });
+    }
+
+    if (brandUuid.length > 0) {
+      builder.andWhere('product.brandUuid IN (:...brandUuid)', { brandUuid });
+    }
+
+    if (categoryUuid.length > 0) {
+      builder.andWhere('product.categoryUuid IN (:...categoryUuid)', { categoryUuid });
+    }
+
+    return builder;
+  }
+
+  private stringListFilter(value: unknown): string[] {
+    if (Array.isArray(value)) {
+      return value.filter((item): item is string => typeof item === 'string' && item.length > 0);
+    }
+
+    return typeof value === 'string' && value.length > 0 ? [value] : [];
   }
 
   async findByUuid(uuid: string) {

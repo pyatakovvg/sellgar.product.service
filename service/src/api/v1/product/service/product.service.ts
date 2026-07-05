@@ -13,8 +13,8 @@ import { ProductRepository } from '../repository/product.repository';
 export class ProductService {
   constructor(private readonly productRepository: ProductRepository) {}
 
-  async findAll() {
-    const result = await Promise.all([this.productRepository.findAll(), this.productRepository.count()]).then(
+  async findAll(query?: Record<string, unknown>) {
+    const result = await Promise.all([this.productRepository.findAll(query), this.productRepository.count(query)]).then(
       ([data, count]) => {
         return {
           data: data,
