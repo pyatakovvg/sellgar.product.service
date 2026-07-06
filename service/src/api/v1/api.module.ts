@@ -3,7 +3,6 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ClientsModule, Transport } from '@nestjs/microservices';
 
 import { PropertyModule } from './property/property.module';
-import { PropertyGroupModule } from './property-group/property-group.module';
 import { UnitModule } from './unit/unit.module';
 import { BrandModule } from './brand/brand.module';
 import { CategoryModule } from './category/category.module';
@@ -53,7 +52,6 @@ import { UserModule } from './user/user.module';
     UserModule,
     ProductModule,
     VariantModule,
-    PropertyGroupModule,
     PropertyModule,
     UnitModule,
     BrandModule,

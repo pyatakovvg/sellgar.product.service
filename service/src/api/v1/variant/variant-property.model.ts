@@ -2,6 +2,7 @@ import { Entity, Unique, PrimaryColumn, Column, JoinColumn, ManyToOne } from 'ty
 
 import { VariantModel } from './variant.model';
 import { PropertyModel } from '../property/property.model';
+import { PropertyOptionModel } from '../property/property-option.model';
 
 @Entity('variant_property')
 @Unique(['variantUuid', 'propertyUuid'])
@@ -15,6 +16,9 @@ export class VariantPropertyModel {
   @Column({ name: 'property_uuid', type: 'uuid' })
   propertyUuid: string;
 
+  @Column({ name: 'option_uuid', type: 'uuid', nullable: true })
+  optionUuid: string | null;
+
   @JoinColumn({ name: 'variant_uuid' })
   @ManyToOne(() => VariantModel, (variant) => variant.properties, {
     onDelete: 'CASCADE',
@@ -26,6 +30,10 @@ export class VariantPropertyModel {
     onDelete: 'CASCADE',
   })
   property: PropertyModel;
+
+  @JoinColumn({ name: 'option_uuid' })
+  @ManyToOne(() => PropertyOptionModel, { nullable: true, onDelete: 'SET NULL' })
+  option: PropertyOptionModel | null;
 
   @Column({ name: 'value', type: 'varchar', length: 256 })
   value: string;

@@ -9,6 +9,10 @@ export class ProductPropertyDto {
   @IsUUID()
   propertyUuid: string;
 
+  @IsUUID()
+  @IsOptional()
+  optionUuid?: string | null;
+
   @IsString()
   value: string;
 }

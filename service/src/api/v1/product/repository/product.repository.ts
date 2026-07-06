@@ -61,12 +61,16 @@ export class ProductRepository {
       .leftJoinAndSelect('product.properties', 'productProperties')
       .leftJoinAndSelect('productProperties.property', 'productProperty')
       .leftJoinAndSelect('productProperty.unit', 'productPropertyUnit')
+      .leftJoinAndSelect('productProperties.option', 'productPropertyOption')
+      .leftJoinAndSelect('productPropertyOption.metadata', 'productPropertyOptionMetadata')
       .leftJoinAndSelect('product.variants', 'variants', 'variants.status != :archivedVariantStatus', {
         archivedVariantStatus: CatalogStatus.Archived,
       })
       .leftJoinAndSelect('variants.properties', 'properties')
       .leftJoinAndSelect('properties.property', 'property')
       .leftJoinAndSelect('property.unit', 'unit')
+      .leftJoinAndSelect('properties.option', 'variantPropertyOption')
+      .leftJoinAndSelect('variantPropertyOption.metadata', 'variantPropertyOptionMetadata')
       .leftJoinAndSelect('variants.images', 'images')
       .leftJoinAndSelect('images.image', 'image')
       .where('product.status != :archivedProductStatus', { archivedProductStatus: CatalogStatus.Archived });
@@ -74,8 +78,10 @@ export class ProductRepository {
     const result = await this.applyProductFilters(builder, query)
       .orderBy('product.createdAt', 'DESC')
       .addOrderBy('productProperties.order', 'ASC')
+      .addOrderBy('productPropertyOptionMetadata.sortOrder', 'ASC')
       .addOrderBy('variants.createdAt', 'ASC')
       .addOrderBy('properties.order', 'ASC')
+      .addOrderBy('variantPropertyOptionMetadata.sortOrder', 'ASC')
       .addOrderBy('images.order', 'ASC')
       .getMany();
 
@@ -126,19 +132,25 @@ export class ProductRepository {
       .leftJoinAndSelect('product.properties', 'productProperties')
       .leftJoinAndSelect('productProperties.property', 'productProperty')
       .leftJoinAndSelect('productProperty.unit', 'productPropertyUnit')
+      .leftJoinAndSelect('productProperties.option', 'productPropertyOption')
+      .leftJoinAndSelect('productPropertyOption.metadata', 'productPropertyOptionMetadata')
       .leftJoinAndSelect('product.variants', 'variants', 'variants.status != :archivedVariantStatus', {
         archivedVariantStatus: CatalogStatus.Archived,
       })
       .leftJoinAndSelect('variants.properties', 'properties')
       .leftJoinAndSelect('properties.property', 'property')
       .leftJoinAndSelect('property.unit', 'unit')
+      .leftJoinAndSelect('properties.option', 'variantPropertyOption')
+      .leftJoinAndSelect('variantPropertyOption.metadata', 'variantPropertyOptionMetadata')
       .leftJoinAndSelect('variants.images', 'images')
       .leftJoinAndSelect('images.image', 'image')
       .where('product.uuid = :uuid', { uuid })
       .andWhere('product.status != :archivedProductStatus', { archivedProductStatus: CatalogStatus.Archived })
       .orderBy('productProperties.order', 'ASC')
+      .addOrderBy('productPropertyOptionMetadata.sortOrder', 'ASC')
       .addOrderBy('variants.createdAt', 'ASC')
       .addOrderBy('properties.order', 'ASC')
+      .addOrderBy('variantPropertyOptionMetadata.sortOrder', 'ASC')
       .addOrderBy('images.order', 'ASC')
       .getOneOrFail();
 
@@ -205,6 +217,7 @@ export class ProductRepository {
             return {
               variantUuid: newVariant.raw[0].uuid,
               propertyUuid: property.propertyUuid,
+              optionUuid: property.optionUuid,
               value: property.value,
               order,
             };
@@ -229,18 +242,24 @@ export class ProductRepository {
         .leftJoinAndSelect('product.properties', 'productProperties')
         .leftJoinAndSelect('productProperties.property', 'productProperty')
         .leftJoinAndSelect('productProperty.unit', 'productPropertyUnit')
+        .leftJoinAndSelect('productProperties.option', 'productPropertyOption')
+        .leftJoinAndSelect('productPropertyOption.metadata', 'productPropertyOptionMetadata')
         .leftJoinAndSelect('product.variants', 'variants', 'variants.status != :archivedVariantStatus', {
           archivedVariantStatus: CatalogStatus.Archived,
         })
         .leftJoinAndSelect('variants.properties', 'properties')
         .leftJoinAndSelect('properties.property', 'property')
         .leftJoinAndSelect('property.unit', 'unit')
+        .leftJoinAndSelect('properties.option', 'variantPropertyOption')
+        .leftJoinAndSelect('variantPropertyOption.metadata', 'variantPropertyOptionMetadata')
         .leftJoinAndSelect('variants.images', 'images')
         .leftJoinAndSelect('images.image', 'image')
         .where('product.uuid = :uuid', { uuid: newUuid })
         .orderBy('productProperties.order', 'ASC')
+        .addOrderBy('productPropertyOptionMetadata.sortOrder', 'ASC')
         .addOrderBy('variants.createdAt', 'ASC')
         .addOrderBy('properties.order', 'ASC')
+        .addOrderBy('variantPropertyOptionMetadata.sortOrder', 'ASC')
         .addOrderBy('images.order', 'ASC')
         .getOneOrFail();
 
@@ -413,6 +432,7 @@ export class ProductRepository {
               return {
                 variantUuid: newVariant.raw[0].uuid,
                 propertyUuid: property.propertyUuid,
+                optionUuid: property.optionUuid,
                 value: property.value,
                 order,
               };
@@ -438,19 +458,25 @@ export class ProductRepository {
         .leftJoinAndSelect('product.properties', 'productProperties')
         .leftJoinAndSelect('productProperties.property', 'productProperty')
         .leftJoinAndSelect('productProperty.unit', 'productPropertyUnit')
+        .leftJoinAndSelect('productProperties.option', 'productPropertyOption')
+        .leftJoinAndSelect('productPropertyOption.metadata', 'productPropertyOptionMetadata')
         .leftJoinAndSelect('product.variants', 'variants', 'variants.status != :archivedVariantStatus', {
           archivedVariantStatus: CatalogStatus.Archived,
         })
         .leftJoinAndSelect('variants.properties', 'properties')
         .leftJoinAndSelect('properties.property', 'property')
         .leftJoinAndSelect('property.unit', 'unit')
+        .leftJoinAndSelect('properties.option', 'variantPropertyOption')
+        .leftJoinAndSelect('variantPropertyOption.metadata', 'variantPropertyOptionMetadata')
         .leftJoinAndSelect('variants.images', 'images')
         .leftJoinAndSelect('images.image', 'image')
         .where('product.uuid = :uuid', { uuid: dto.uuid })
         .andWhere('product.status != :archivedProductStatus', { archivedProductStatus: CatalogStatus.Archived })
         .orderBy('productProperties.order', 'ASC')
+        .addOrderBy('productPropertyOptionMetadata.sortOrder', 'ASC')
         .addOrderBy('variants.createdAt', 'ASC')
         .addOrderBy('properties.order', 'ASC')
+        .addOrderBy('variantPropertyOptionMetadata.sortOrder', 'ASC')
         .addOrderBy('images.order', 'ASC')
         .getOneOrFail();
 
@@ -522,6 +548,7 @@ export class ProductRepository {
           uuid: property?.uuid,
           productUuid,
           propertyUuid: property.propertyUuid,
+          optionUuid: property.optionUuid,
           value: property.value,
           order,
         };
@@ -574,6 +601,7 @@ export class ProductRepository {
           uuid: property?.uuid,
           variantUuid,
           propertyUuid: property.propertyUuid,
+          optionUuid: property.optionUuid,
           value: property.value,
           order,
         };

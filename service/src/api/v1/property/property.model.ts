@@ -11,15 +11,15 @@ import {
 
 import { UnitModel } from '../unit/unit.model';
 import { VariantPropertyModel } from '../variant/variant-property.model';
-import { PropertyGroupModel } from '../property-group/property-group.model';
 import { ProductPropertyModel } from '../product/product-property.model';
+import { PropertyOptionModel } from './property-option.model';
 
 export enum PropertyTypeEnum {
   'TEXT' = 'TEXT',
-  'CHECKBOX' = 'CHECKBOX',
-  'RADIO' = 'RADIO',
+  'NUMBER' = 'NUMBER',
+  'BOOLEAN' = 'BOOLEAN',
+  'OPTION' = 'OPTION',
   'DATE' = 'DATE',
-  'RANGE' = 'RANGE',
 }
 
 @Entity('property')
@@ -42,19 +42,15 @@ export class PropertyModel {
   @Column({ name: 'version', type: 'int', default: 1 })
   version: number;
 
-  @Column({ name: 'group_uuid', type: 'uuid' })
-  groupUuid: string;
-
-  @JoinColumn({ name: 'group_uuid' })
-  @ManyToOne(() => PropertyGroupModel, (group) => group.properties, { cascade: true, onDelete: 'CASCADE' })
-  group: PropertyGroupModel;
-
   @Column({ name: 'unit_uuid', type: 'uuid', nullable: true })
   unitUuid: string | null;
 
   @JoinColumn({ name: 'unit_uuid' })
   @ManyToOne(() => UnitModel, (unit) => unit.uuid, { cascade: true, onDelete: 'CASCADE' })
   unit: UnitModel;
+
+  @OneToMany(() => PropertyOptionModel, (option) => option.property)
+  options: PropertyOptionModel[];
 
   @OneToMany(() => VariantPropertyModel, (variantProperty) => variantProperty.property)
   variants: VariantPropertyModel[];

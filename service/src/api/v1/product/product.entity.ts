@@ -4,7 +4,7 @@ import { IsUUID, IsString, IsOptional, ValidateNested, IsNumber, IsDate, IsEnum 
 import { BrandEntity } from '@/api/v1/brand/brand.entity';
 import { CatalogStatus } from '@/api/v1/catalog/catalog-status.enum';
 import { CategoryEntity } from '@/api/v1/category/category.entity';
-import { PropertyEntity } from '@/api/v1/property/property.entity';
+import { PropertyEntity, PropertyOptionEntity } from '@/api/v1/property/property.entity';
 import { VariantEntity } from '@/api/v1/variant/variant.entity';
 
 export class ProductPropertyEntity {
@@ -17,9 +17,20 @@ export class ProductPropertyEntity {
   propertyUuid: string;
 
   @Expose()
+  @IsUUID()
+  @IsOptional()
+  optionUuid: string | null;
+
+  @Expose()
   @ValidateNested()
   @Type(() => PropertyEntity)
   property: PropertyEntity;
+
+  @Expose()
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => PropertyOptionEntity)
+  option: PropertyOptionEntity | null;
 
   @Expose()
   @IsString()
