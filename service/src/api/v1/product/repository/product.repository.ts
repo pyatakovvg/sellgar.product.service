@@ -5,7 +5,7 @@ import { OutboxEventInput, OutboxWriter } from '@sellgar/outbox';
 import * as uuid from 'uuid';
 import { DataSource, EntityManager } from 'typeorm';
 import { validateOrReject } from 'class-validator';
-import { plainToInstance } from 'class-transformer';
+import { instanceToPlain, plainToInstance } from 'class-transformer';
 
 import { CreateProductDto, ProductVariantImage } from './dto/create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
@@ -487,10 +487,14 @@ export class ProductRepository {
       await validateOrReject(resultInstance);
 
       integrationEvents.unshift(
-        this.createIntegrationEvent('product.updated', 'product', productRow.uuid, productRow.version, {
-          name: productRow.name,
-          status: productRow.status,
-        }),
+        this.createIntegrationEvent(
+          'product.updated',
+          'product',
+          productRow.uuid,
+          productRow.version,
+          instanceToPlain(resultInstance),
+          2,
+        ),
       );
       await this.insertOutboxEvents(runner.manager, integrationEvents);
       await runner.commitTransaction();
@@ -699,10 +703,11 @@ export class ProductRepository {
     aggregateUuid: string,
     aggregateVersion: number,
     payload: Record<string, unknown>,
+    schemaVersion = 1,
   ): OutboxEventInput {
     return {
       eventType,
-      schemaVersion: 1,
+      schemaVersion,
       aggregateType,
       aggregateUuid,
       aggregateVersion,
