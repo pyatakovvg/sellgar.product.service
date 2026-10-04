@@ -4,7 +4,7 @@ import { ProductFieldEntity } from './product-field.entity';
 import { VariantEntity } from './variant.entity';
 
 export class ProductEntity {
-  code: string;
+  uuid: string;
   typeUuid: string;
   typeVersion: number;
   name: string;
@@ -22,7 +22,7 @@ export class ProductEntity {
     const productFields = model.productType.productFields ?? [];
     const variantFields = model.productType.variantFields ?? [];
     return {
-      code: model.code,
+      uuid: model.uuid,
       typeUuid: model.typeUuid,
       typeVersion: model.productType.version,
       name: model.name,
@@ -32,7 +32,9 @@ export class ProductEntity {
       version: model.version,
       createdAt: model.createdAt,
       updatedAt: model.updatedAt,
-      properties: productFields.map((field) => ProductFieldEntity.fromModels(field, assignments.get(field.propertyCode))),
+      properties: productFields.map((field) =>
+        ProductFieldEntity.fromModels(field, assignments.get(field.propertyCode)),
+      ),
       variants: (model.variants ?? []).map((variant) => VariantEntity.fromModel(variant, variantFields)),
     };
   }

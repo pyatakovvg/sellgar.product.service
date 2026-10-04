@@ -14,16 +14,17 @@ catalog/<aggregate>/
   controller/
     dto/          один входной контракт на файл
   service/
-    command/      команды приложения без class-validator
+    command/      валидируемые команды приложения
   repository/     TypeORM и транзакции
   entity/         выходные модели API
   *.model.ts      таблицы агрегата
   *.module.ts     NestJS composition root модуля
 ```
 
-DTO не используются сервисами и репозиториями. Контроллер валидирует вход и
-переводит его в команду приложения. Сервис применяет бизнес-правила, репозиторий
-атомарно сохраняет результат и обеспечивает optimistic version check.
+DTO не используются сервисами и репозиториями. Mapper преобразует DTO через
+`plainToInstance` и `validateOrReject` в команду приложения. Сервис применяет
+бизнес-правила, репозиторий атомарно сохраняет результат и обеспечивает
+optimistic version check.
 
 ## Реализованная модель
 
@@ -32,7 +33,7 @@ DTO не используются сервисами и репозиториям
 - Собственные опции свойства и упорядоченные дополнения `TEXT`, `COLOR`, `IMAGE`.
 - `ProductType` с отдельными полями товара и варианта, `required`, `multiple`
   и порядком. `BOOLEAN` всегда одиночный.
-- `Product` с ручным кодом, брендом, описанием и минимум одним `Variant`.
+- `Product` с UUID, брендом, описанием и минимум одним `Variant` с UUID.
 - Типизированные значения находятся в дочерних таблицах назначений. `DECIMAL`
   хранится как `numeric(38,12)`, `DATE` как календарная дата, `INTEGER` как bigint.
 - Актуальная структура типа формирует выдачу существующего товара. Новое поле
@@ -83,7 +84,7 @@ yarn start:dev
 yarn build:product_srv
 ```
 
-На `product_srv_v2` применены четыре миграции. Реальный smoke-сценарий проверен
+На `product_srv_v2` применены пять миграций. Реальный smoke-сценарий проверен
 через TypeORM: создание справочников, типа, товара и варианта одной транзакцией;
 появление нового пустого поля; каскад значений после удаления поля; поиск по
 числовому диапазону и опции варианта; архивирование; блокировка физического
@@ -101,7 +102,7 @@ yarn build:product_srv
 | Image | `catalog.v2.image.getByUuid`; события `file_srv.file.create/update` |
 | Property | `catalog.v2.property.getAll`, `getByCode`, `create`, `update`, `option.create`, `option.update` |
 | ProductType | `catalog.v2.productType.getAll`, `getByUuid`, `create`, `update` |
-| Product | `catalog.v2.product.getAll`, `getByCode`, `create`, `update`, `archive`, `restore` |
+| Product | `catalog.v2.product.getAll`, `getByUuid`, `create`, `update`, `archive`, `restore` |
 | Variant | `catalog.v2.product.variant.create`, `update`, `archive`, `restore` |
 
 `getAll` принимает `limit` и `offset`; для Product дополнительно доступны фильтры
@@ -126,7 +127,22 @@ yarn build:product_srv
 не меняется. Пустой `values` очищает необязательное свойство; обязательное поле
 очистить нельзя. Отсутствие варианта в запросе не архивирует его.
 
-Исходящие события каталога пока не публикуются: общая outbox-библиотека хранит
-`aggregate_uuid` как UUID, а Product и Variant по RFC имеют строковые бизнес-коды.
-Перед подключением Store требуется изменить контракт вложенной outbox-библиотеки
-или утвердить отдельную таблицу событий v2.
+Product и Variant используют генерируемые UUID без дополнительного `code`.
+Каждое фактическое изменение агрегата Product записывает полный снимок в
+`outbox_event` в той же транзакции. Relay публикует `product.created` или
+`product.updated` в `event.exchange`. Изменения ProductType, Property и Image,
+которые меняют витринный снимок, увеличивают версии затронутых Product и также
+создают `product.updated`.
+
+`ProductOutboxModule` подключает общий `OutboxModule`, writer и relay. Снимок
+Product и запись `outbox_event` сохраняются в одной транзакции с изменением
+агрегата. Relay публикует событие отдельно и после подтверждения брокера отмечает
+его опубликованным.
+
+`InboxModule` предоставляет `InboxService` и `InboxRepository`. События
+`file_srv.file.create/update` применяются через `inbox_event`: захват события,
+изменение Image-проекции и статус `processed` коммитятся одной транзакцией.
+Повтор обработанного `event_uuid` пропускает обработчик. При ошибке сохраняются
+`failed`, число попыток и `last_error`, после чего сообщение возвращается брокеру
+для повторной доставки. Детерминированный `event_uuid` временно адаптирует прямой
+контракт File service, пока его payload не содержит собственного UUID события.

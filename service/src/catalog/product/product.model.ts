@@ -9,7 +9,6 @@ import {
   OneToMany,
   PrimaryColumn,
   UpdateDateColumn,
-  Unique,
 } from 'typeorm';
 
 import { BrandModel } from '../brand/brand.model';
@@ -20,12 +19,12 @@ import { VariantModel } from './variant.model';
 
 @Entity('product')
 @Check('product_version_positive', 'version > 0')
-@Unique('product_code_type_unique', ['code', 'typeUuid'])
+@Index('product_uuid_type_unique', ['uuid', 'typeUuid'], { unique: true })
 @Index('product_type_idx', ['typeUuid'])
 @Index('product_brand_idx', ['brandCode'])
 export class ProductModel {
-  @PrimaryColumn({ type: 'varchar', length: 256 })
-  code: string;
+  @PrimaryColumn({ type: 'uuid' })
+  uuid: string;
 
   @Column({ name: 'type_uuid', type: 'uuid' })
   typeUuid: string;

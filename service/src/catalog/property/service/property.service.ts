@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { plainToInstance } from 'class-transformer';
 
 import { PropertyEntity } from '../entity/property.entity';
 import { PropertyPageEntity } from '../entity/property-page.entity';
@@ -7,6 +8,7 @@ import { PropertyOptionExtraKind } from '../property-option-extra-kind.enum';
 import { PropertyOptionTextDisplay } from '../property-option-text-display.enum';
 import { PropertyRepository } from '../repository/property.repository';
 import { CreatePropertyCommand } from './command/create-property.command';
+import { CreatePropertyOptionCommand } from './command/create-property-option.command';
 import { PropertyOptionCommand } from './command/property-option.command';
 import { PropertyOptionExtraCommand } from './command/property-option-extra.command';
 import { UpdatePropertyCommand } from './command/update-property.command';
@@ -27,14 +29,7 @@ export class PropertyService {
 
   async create(command: CreatePropertyCommand): Promise<PropertyEntity> {
     const options = this.normalizeOptions(command.kind, command.options ?? []);
-    const normalized = new CreatePropertyCommand(
-      command.code,
-      command.name,
-      command.kind,
-      command.description,
-      command.unitCode,
-      options,
-    );
+    const normalized = plainToInstance(CreatePropertyCommand, { ...command, options });
     return PropertyEntity.fromModel(await this.propertyRepository.create(normalized));
   }
 
@@ -42,21 +37,15 @@ export class PropertyService {
     return PropertyEntity.fromModel(await this.propertyRepository.update(command));
   }
 
-  async createOption(code: string, version: number, input: PropertyOptionCommand): Promise<PropertyEntity> {
-    const option = this.normalizeOption(input, 0);
-    return PropertyEntity.fromModel(await this.propertyRepository.createOption(code, version, option));
+  async createOption(command: CreatePropertyOptionCommand): Promise<PropertyEntity> {
+    const option = this.normalizeOption(command.option, 0);
+    return PropertyEntity.fromModel(await this.propertyRepository.createOption(command.code, command.version, option));
   }
 
   async updateOption(command: UpdatePropertyOptionCommand): Promise<PropertyEntity> {
     const extras = command.extras === undefined ? undefined : this.normalizeExtras(command.extras);
-    return PropertyEntity.fromModel(await this.propertyRepository.updateOption(new UpdatePropertyOptionCommand(
-      command.code,
-      command.optionCode,
-      command.version,
-      command.name,
-      command.sortOrder,
-      extras,
-    )));
+    const normalized = plainToInstance(UpdatePropertyOptionCommand, { ...command, extras });
+    return PropertyEntity.fromModel(await this.propertyRepository.updateOption(normalized));
   }
 
   private normalizeOptions(kind: PropertyKind, options: PropertyOptionCommand[]): PropertyOptionCommand[] {
@@ -72,12 +61,11 @@ export class PropertyService {
   }
 
   private normalizeOption(option: PropertyOptionCommand, defaultOrder: number): PropertyOptionCommand {
-    return new PropertyOptionCommand(
-      option.code,
-      option.name,
-      option.sortOrder ?? defaultOrder,
-      this.normalizeExtras(option.extras ?? []),
-    );
+    return plainToInstance(PropertyOptionCommand, {
+      ...option,
+      sortOrder: option.sortOrder ?? defaultOrder,
+      extras: this.normalizeExtras(option.extras ?? []),
+    });
   }
 
   private normalizeExtras(extras: PropertyOptionExtraCommand[]): PropertyOptionExtraCommand[] {
@@ -97,24 +85,42 @@ export class PropertyService {
       if (extra.valueText === undefined || extra.valueColor !== undefined || extra.imageUuid !== undefined) {
         throw new BadRequestException('TEXT option extra requires only valueText');
       }
-      return new PropertyOptionExtraCommand(
-        extra.type,
+      return plainToInstance(PropertyOptionExtraCommand, {
+        type: extra.type,
         sortOrder,
-        extra.textDisplay ?? PropertyOptionTextDisplay.TEXT,
-        extra.valueText,
-      );
+        textDisplay: extra.textDisplay ?? PropertyOptionTextDisplay.TEXT,
+        valueText: extra.valueText,
+      });
     }
     if (extra.type === PropertyOptionExtraKind.COLOR) {
-      if (extra.valueColor === undefined || extra.valueText !== undefined || extra.imageUuid !== undefined || extra.textDisplay !== undefined) {
+      if (
+        extra.valueColor === undefined ||
+        extra.valueText !== undefined ||
+        extra.imageUuid !== undefined ||
+        extra.textDisplay !== undefined
+      ) {
         throw new BadRequestException('COLOR option extra requires only valueColor');
       }
-      return new PropertyOptionExtraCommand(extra.type, sortOrder, undefined, undefined, extra.valueColor.toUpperCase());
+      return plainToInstance(PropertyOptionExtraCommand, {
+        type: extra.type,
+        sortOrder,
+        valueColor: extra.valueColor.toUpperCase(),
+      });
     }
     if (extra.type === PropertyOptionExtraKind.IMAGE) {
-      if (extra.imageUuid === undefined || extra.valueText !== undefined || extra.valueColor !== undefined || extra.textDisplay !== undefined) {
+      if (
+        extra.imageUuid === undefined ||
+        extra.valueText !== undefined ||
+        extra.valueColor !== undefined ||
+        extra.textDisplay !== undefined
+      ) {
         throw new BadRequestException('IMAGE option extra requires only imageUuid');
       }
-      return new PropertyOptionExtraCommand(extra.type, sortOrder, undefined, undefined, undefined, extra.imageUuid.toLowerCase());
+      return plainToInstance(PropertyOptionExtraCommand, {
+        type: extra.type,
+        sortOrder,
+        imageUuid: extra.imageUuid.toLowerCase(),
+      });
     }
     throw new BadRequestException('Unsupported option extra type');
   }

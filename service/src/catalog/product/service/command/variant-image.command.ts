@@ -1,6 +1,12 @@
+import { IsInt, IsOptional, IsUUID, Max, Min } from 'class-validator';
+
 export class VariantImageCommand {
-  constructor(
-    readonly imageUuid: string,
-    readonly sortOrder?: number,
-  ) {}
+  @IsUUID()
+  readonly imageUuid: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(2147483647)
+  readonly sortOrder?: number;
 }

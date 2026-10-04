@@ -1,10 +1,10 @@
 import { Type } from 'class-transformer';
 import { IsInt, Max, Min, ValidateNested } from 'class-validator';
 
-import { ProductCodeDto } from './product-code.dto';
+import { ProductUuidDto } from './product-uuid.dto';
 import { VariantInputDto } from './variant-input.dto';
 
-export class CreateVariantDto extends ProductCodeDto {
+export class CreateVariantDto extends ProductUuidDto {
   @IsInt()
   @Min(1)
   @Max(2147483647)

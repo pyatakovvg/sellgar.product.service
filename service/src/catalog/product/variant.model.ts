@@ -8,7 +8,6 @@ import {
   OneToMany,
   PrimaryColumn,
   UpdateDateColumn,
-  Unique,
 } from 'typeorm';
 
 import { ProductModel } from './product.model';
@@ -17,14 +16,14 @@ import { VariantImageModel } from './variant-image.model';
 import { VariantPropertyModel } from './variant-property.model';
 
 @Entity('variant')
-@Unique('variant_code_type_unique', ['code', 'typeUuid'])
-@Index('variant_product_idx', ['productCode'])
+@Index('variant_uuid_type_unique', ['uuid', 'typeUuid'], { unique: true })
+@Index('variant_product_idx', ['productUuid'])
 export class VariantModel {
-  @PrimaryColumn({ type: 'varchar', length: 256 })
-  code: string;
+  @PrimaryColumn({ type: 'uuid' })
+  uuid: string;
 
-  @Column({ name: 'product_code', type: 'varchar', length: 256 })
-  productCode: string;
+  @Column({ name: 'product_uuid', type: 'uuid' })
+  productUuid: string;
 
   @Column({ name: 'type_uuid', type: 'uuid' })
   typeUuid: string;
@@ -40,7 +39,7 @@ export class VariantModel {
 
   @ManyToOne(() => ProductModel, (product) => product.variants, { onDelete: 'RESTRICT' })
   @JoinColumn([
-    { name: 'product_code', referencedColumnName: 'code', foreignKeyConstraintName: 'variant_product_fk' },
+    { name: 'product_uuid', referencedColumnName: 'uuid', foreignKeyConstraintName: 'variant_product_fk' },
     { name: 'type_uuid', referencedColumnName: 'typeUuid' },
   ])
   product: ProductModel;

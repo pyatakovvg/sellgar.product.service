@@ -1,15 +1,10 @@
-import { Transform } from 'class-transformer';
-import { IsInt, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { IsInt, IsUUID, Max, Min } from 'class-validator';
 
-import { trimString } from '../../../../common/transformer/trim-string.transformer';
-import { ProductCodeDto } from './product-code.dto';
+import { ProductUuidDto } from './product-uuid.dto';
 
-export class ChangeVariantStatusDto extends ProductCodeDto {
-  @Transform(trimString)
-  @IsString()
-  @MinLength(1)
-  @MaxLength(256)
-  variantCode: string;
+export class ChangeVariantStatusDto extends ProductUuidDto {
+  @IsUUID()
+  variantUuid: string;
 
   @IsInt()
   @Min(1)

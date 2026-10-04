@@ -26,7 +26,13 @@ export class PropertyOptionExtraModel {
   @PrimaryColumn({ name: 'sort_order', type: 'integer' })
   sortOrder: number;
 
-  @Column({ name: 'text_display', type: 'enum', enum: PropertyOptionTextDisplay, enumName: 'property_option_text_display_enum', nullable: true })
+  @Column({
+    name: 'text_display',
+    type: 'enum',
+    enum: PropertyOptionTextDisplay,
+    enumName: 'property_option_text_display_enum',
+    nullable: true,
+  })
   textDisplay: PropertyOptionTextDisplay | null;
 
   @Column({ name: 'value_text', type: 'text', nullable: true })
@@ -40,12 +46,20 @@ export class PropertyOptionExtraModel {
 
   @ManyToOne(() => PropertyOptionModel, (option) => option.extras, { onDelete: 'CASCADE' })
   @JoinColumn([
-    { name: 'property_code', referencedColumnName: 'propertyCode', foreignKeyConstraintName: 'property_option_extra_option_fk' },
+    {
+      name: 'property_code',
+      referencedColumnName: 'propertyCode',
+      foreignKeyConstraintName: 'property_option_extra_option_fk',
+    },
     { name: 'option_code', referencedColumnName: 'code' },
   ])
   option: PropertyOptionModel;
 
   @ManyToOne(() => ImageModel, { nullable: true, onDelete: 'RESTRICT' })
-  @JoinColumn({ name: 'image_uuid', referencedColumnName: 'uuid', foreignKeyConstraintName: 'property_option_extra_image_fk' })
+  @JoinColumn({
+    name: 'image_uuid',
+    referencedColumnName: 'uuid',
+    foreignKeyConstraintName: 'property_option_extra_image_fk',
+  })
   image: ImageModel | null;
 }

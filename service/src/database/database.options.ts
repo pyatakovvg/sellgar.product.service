@@ -18,6 +18,8 @@ import { ProductPropertyValueModel } from '../catalog/product/product-property-v
 import { VariantPropertyModel } from '../catalog/product/variant-property.model';
 import { VariantPropertyValueModel } from '../catalog/product/variant-property-value.model';
 import { VariantImageModel } from '../catalog/product/variant-image.model';
+import { OutboxEventModel } from '@sellgar/outbox';
+import { InboxEventModel } from '../integration/inbox/inbox-event.model';
 
 export function databaseOptions(env: NodeJS.ProcessEnv): DataSourceOptions {
   const database = requiredEnvironment(env, 'PRODUCT_DATABASE_NAME');
@@ -51,6 +53,8 @@ export function databaseOptions(env: NodeJS.ProcessEnv): DataSourceOptions {
       VariantPropertyModel,
       VariantPropertyValueModel,
       VariantImageModel,
+      OutboxEventModel,
+      InboxEventModel,
     ],
     migrations: [join(__dirname, 'migrations', '*{.ts,.js}')],
     synchronize: false,

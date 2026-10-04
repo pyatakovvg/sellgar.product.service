@@ -1,9 +1,23 @@
+import { Type } from 'class-transformer';
+import { IsArray, IsOptional, IsString, MaxLength, MinLength, ValidateNested } from 'class-validator';
+
 import { ProductTypeFieldCommand } from './product-type-field.command';
 
 export class CreateProductTypeCommand {
-  constructor(
-    readonly name: string,
-    readonly productFields?: ProductTypeFieldCommand[],
-    readonly variantFields?: ProductTypeFieldCommand[],
-  ) {}
+  @IsString()
+  @MinLength(1)
+  @MaxLength(256)
+  readonly name: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ProductTypeFieldCommand)
+  readonly productFields?: ProductTypeFieldCommand[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ProductTypeFieldCommand)
+  readonly variantFields?: ProductTypeFieldCommand[];
 }

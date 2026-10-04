@@ -10,12 +10,6 @@ export class VariantInputDto {
   @IsString()
   @MinLength(1)
   @MaxLength(256)
-  code: string;
-
-  @Transform(trimString)
-  @IsString()
-  @MinLength(1)
-  @MaxLength(256)
   name: string;
 
   @IsOptional()

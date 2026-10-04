@@ -4,7 +4,7 @@ import { DataSource, EntityManager, In, QueryFailedError } from 'typeorm';
 import { ImageModel } from '../../image/infrastructure/persistence/model/image.model';
 import { BrandImageModel } from '../brand-image.model';
 import { BrandModel } from '../brand.model';
-import { BrandImageInput } from '../service/brand-image.input';
+import { BrandImageCommand } from '../service/command/brand-image.command';
 
 @Injectable()
 export class BrandRepository {
@@ -13,7 +13,8 @@ export class BrandRepository {
   async getAll(limit: number, offset: number) {
     const [items, total] = await this.dataSource.getRepository(BrandModel).findAndCount({
       order: { code: 'ASC' },
-      take: limit, skip: offset,
+      take: limit,
+      skip: offset,
     });
     if (items.length > 0) {
       const links = await this.dataSource.manager.find(BrandImageModel, {
@@ -32,9 +33,11 @@ export class BrandRepository {
     return { items, total, limit, offset };
   }
 
-  getByCode(code: string) { return this.readBrand(this.dataSource.manager, code); }
+  getByCode(code: string) {
+    return this.readBrand(this.dataSource.manager, code);
+  }
 
-  async create(code: string, name: string, description?: string | null, images?: BrandImageInput[]) {
+  async create(code: string, name: string, description?: string | null, images?: BrandImageCommand[]) {
     try {
       return await this.dataSource.transaction(async (manager) => {
         await manager.insert(BrandModel, { code, name, description: description ?? null, version: 1 });
@@ -49,7 +52,7 @@ export class BrandRepository {
     }
   }
 
-  update(code: string, version: number, name?: string, description?: string | null, images?: BrandImageInput[]) {
+  update(code: string, version: number, name?: string, description?: string | null, images?: BrandImageCommand[]) {
     return this.dataSource.transaction(async (manager) => {
       const brand = await manager.findOne(BrandModel, { where: { code }, lock: { mode: 'pessimistic_write' } });
       if (!brand) throw new NotFoundException(`Brand ${code} not found`);
@@ -71,26 +74,33 @@ export class BrandRepository {
 
   private async readBrand(manager: EntityManager, code: string) {
     const brand = await manager.findOne(BrandModel, {
-      where: { code }, relations: { images: { image: true } },
+      where: { code },
+      relations: { images: { image: true } },
       order: { images: { sortOrder: 'ASC', imageUuid: 'ASC' } },
     });
     if (!brand) throw new NotFoundException(`Brand ${code} not found`);
     return brand;
   }
 
-  private async replaceImages(manager: EntityManager, brandCode: string, images: BrandImageInput[]) {
+  private async replaceImages(manager: EntityManager, brandCode: string, images: BrandImageCommand[]) {
     if (images.length > 0) {
       const identifiers = images.map((image) => image.imageUuid);
       const knownImages = await manager.find(ImageModel, { where: { uuid: In(identifiers) } });
       const found = new Set(knownImages.map((image) => image.uuid));
-      if (identifiers.some((uuid) => !found.has(uuid))) throw new NotFoundException('Some selected brand images do not exist');
+      if (identifiers.some((uuid) => !found.has(uuid)))
+        throw new NotFoundException('Some selected brand images do not exist');
     }
 
     await manager.delete(BrandImageModel, { brandCode });
     if (images.length > 0) {
-      await manager.insert(BrandImageModel, images.map((image, index) => ({
-        brandCode, imageUuid: image.imageUuid, sortOrder: image.sortOrder ?? index,
-      })));
+      await manager.insert(
+        BrandImageModel,
+        images.map((image, index) => ({
+          brandCode,
+          imageUuid: image.imageUuid,
+          sortOrder: image.sortOrder ?? index,
+        })),
+      );
     }
   }
 }

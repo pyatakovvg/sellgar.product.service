@@ -5,6 +5,8 @@ import { DataSource, EntityManager, In, QueryFailedError } from 'typeorm';
 
 import { PropertyKind } from '../../property/property-kind.enum';
 import { PropertyModel } from '../../property/property.model';
+import { ProductModel } from '../../product/product.model';
+import { ProductStatus } from '../../product/product-status.enum';
 import { ProductTypeFieldLevel } from '../product-type-field-level.enum';
 import { ProductTypeModel } from '../product-type.model';
 import { CreateProductTypeCommand } from '../service/command/create-product-type.command';
@@ -12,20 +14,28 @@ import { ProductTypeFieldCommand } from '../service/command/product-type-field.c
 import { UpdateProductTypeCommand } from '../service/command/update-product-type.command';
 import { TypeProductFieldModel } from '../type-product-field.model';
 import { TypeVariantFieldModel } from '../type-variant-field.model';
+import { ProductOutboxService } from '../../../integration/outbox/product-outbox.service';
 
 type ProductTypeFieldModel = TypeProductFieldModel | TypeVariantFieldModel;
 
 @Injectable()
 export class ProductTypeRepository {
-  constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
+  constructor(
+    @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly productOutbox: ProductOutboxService,
+  ) {}
 
-  async getAll(limit: number, offset: number): Promise<{ items: ProductTypeModel[]; total: number; limit: number; offset: number }> {
+  async getAll(
+    limit: number,
+    offset: number,
+  ): Promise<{ items: ProductTypeModel[]; total: number; limit: number; offset: number }> {
     const [items, total] = await this.dataSource.getRepository(ProductTypeModel).findAndCount({
       relations: this.relations,
       order: this.order,
       take: limit,
       skip: offset,
     });
+    await this.assignProductCounts(this.dataSource.manager, items);
     return { items, total, limit, offset };
   }
 
@@ -79,6 +89,7 @@ export class ProductTypeRepository {
         if (changed) {
           productType.version += 1;
           await manager.save(ProductTypeModel, productType);
+          await this.productOutbox.touchByType(manager, dto.uuid);
         }
         return this.read(manager, dto.uuid);
       });
@@ -120,10 +131,10 @@ export class ProductTypeRepository {
     fields: ProductTypeFieldCommand[],
   ): Promise<boolean> {
     const model = this.fieldModel(level);
-    const current = await manager.find(model, {
+    const current = (await manager.find(model, {
       where: { typeUuid: uuid },
       lock: { mode: 'pessimistic_write' },
-    }) as ProductTypeFieldModel[];
+    })) as ProductTypeFieldModel[];
     const currentByCode = new Map(current.map((field) => [field.propertyCode, field]));
     const requestedCodes = new Set(fields.map((field) => field.propertyCode));
     const removedCodes = current
@@ -174,11 +185,7 @@ export class ProductTypeRepository {
       if (existing.multiple && !multiple) {
         await this.assertNoMultipleAssignments(manager, level, uuid, field.propertyCode);
       }
-      if (
-        existing.required !== required ||
-        existing.multiple !== multiple ||
-        existing.sortOrder !== sortOrder
-      ) {
+      if (existing.required !== required || existing.multiple !== multiple || existing.sortOrder !== sortOrder) {
         await manager.update(
           model,
           { typeUuid: uuid, propertyCode: field.propertyCode },
@@ -220,11 +227,11 @@ export class ProductTypeRepository {
     propertyCode: string,
   ): Promise<void> {
     const table = level === ProductTypeFieldLevel.PRODUCT ? 'product_property_value' : 'variant_property_value';
-    const owner = level === ProductTypeFieldLevel.PRODUCT ? 'product_code' : 'variant_code';
-    const rows = await manager.query(
+    const owner = level === ProductTypeFieldLevel.PRODUCT ? 'product_uuid' : 'variant_uuid';
+    const rows = (await manager.query(
       `SELECT 1 FROM ${table} WHERE type_uuid = $1 AND property_code = $2 GROUP BY ${owner} HAVING count(*) > 1 LIMIT 1`,
       [typeUuid, propertyCode],
-    ) as unknown[];
+    )) as unknown[];
     if (rows.length > 0) {
       throw new BadRequestException(`Property ${propertyCode} still has consumers with multiple values`);
     }
@@ -237,7 +244,33 @@ export class ProductTypeRepository {
       order: this.order,
     });
     if (!productType) throw new NotFoundException(`Product type ${uuid} not found`);
+    await this.assignProductCounts(manager, [productType]);
     return productType;
+  }
+
+  private async assignProductCounts(manager: EntityManager, productTypes: ProductTypeModel[]): Promise<void> {
+    if (productTypes.length === 0) return;
+
+    const rows = await manager
+      .getRepository(ProductModel)
+      .createQueryBuilder('product')
+      .select('product.typeUuid', 'typeUuid')
+      .addSelect('COUNT(product.uuid) FILTER (WHERE product.status = :activeStatus)', 'activeProductCount')
+      .addSelect('COUNT(product.uuid) FILTER (WHERE product.status = :archivedStatus)', 'archivedProductCount')
+      .where('product.typeUuid IN (:...typeUuids)', {
+        typeUuids: productTypes.map((type) => type.uuid),
+        activeStatus: ProductStatus.ACTIVE,
+        archivedStatus: ProductStatus.ARCHIVED,
+      })
+      .groupBy('product.typeUuid')
+      .getRawMany<{ typeUuid: string; activeProductCount: string; archivedProductCount: string }>();
+    const counts = new Map(rows.map((row) => [row.typeUuid, row]));
+
+    for (const productType of productTypes) {
+      const count = counts.get(productType.uuid);
+      productType.activeProductCount = Number(count?.activeProductCount ?? 0);
+      productType.archivedProductCount = Number(count?.archivedProductCount ?? 0);
+    }
   }
 
   private readonly relations = {
@@ -249,12 +282,24 @@ export class ProductTypeRepository {
     productFields: {
       sortOrder: 'ASC' as const,
       propertyCode: 'ASC' as const,
-      property: { options: { sortOrder: 'ASC' as const, code: 'ASC' as const, extras: { sortOrder: 'ASC' as const, type: 'ASC' as const } } },
+      property: {
+        options: {
+          sortOrder: 'ASC' as const,
+          code: 'ASC' as const,
+          extras: { sortOrder: 'ASC' as const, type: 'ASC' as const },
+        },
+      },
     },
     variantFields: {
       sortOrder: 'ASC' as const,
       propertyCode: 'ASC' as const,
-      property: { options: { sortOrder: 'ASC' as const, code: 'ASC' as const, extras: { sortOrder: 'ASC' as const, type: 'ASC' as const } } },
+      property: {
+        options: {
+          sortOrder: 'ASC' as const,
+          code: 'ASC' as const,
+          extras: { sortOrder: 'ASC' as const, type: 'ASC' as const },
+        },
+      },
     },
   };
 

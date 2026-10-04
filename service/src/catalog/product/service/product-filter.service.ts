@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { plainToInstance } from 'class-transformer';
 
 import { PropertyKind } from '../../property/property-kind.enum';
 import { PropertyModel } from '../../property/property.model';
@@ -11,27 +12,16 @@ export class ProductFilterService {
 
   async normalize(filters: ProductPropertyFilterCommand[]): Promise<ProductPropertyFilterCommand[]> {
     const codes = new Set<string>();
-    return Promise.all(filters.map(async (filter) => {
-      const key = `${filter.level}:${filter.propertyCode}`;
-      if (codes.has(key)) throw new BadRequestException(`Duplicate product filter ${key}`);
-      codes.add(key);
-      const property = await this.propertyRepository.getByCode(filter.propertyCode);
-      this.assertShape(property, filter);
-      return new ProductPropertyFilterCommand(
-        filter.level,
-        filter.propertyCode,
-        property.kind,
-        filter.text,
-        filter.integerFrom,
-        filter.integerTo,
-        filter.decimalFrom,
-        filter.decimalTo,
-        filter.boolean,
-        filter.dateFrom,
-        filter.dateTo,
-        filter.optionCodes,
-      );
-    }));
+    return Promise.all(
+      filters.map(async (filter) => {
+        const key = `${filter.level}:${filter.propertyCode}`;
+        if (codes.has(key)) throw new BadRequestException(`Duplicate product filter ${key}`);
+        codes.add(key);
+        const property = await this.propertyRepository.getByCode(filter.propertyCode);
+        this.assertShape(property, filter);
+        return plainToInstance(ProductPropertyFilterCommand, { ...filter, propertyKind: property.kind });
+      }),
+    );
   }
 
   private assertShape(property: PropertyModel, filter: ProductPropertyFilterCommand): void {
@@ -51,15 +41,27 @@ export class ProductFilterService {
 
     if (kind === PropertyKind.TEXT && filter.text !== undefined && criteria.length === 1) return;
     if (kind === PropertyKind.BOOLEAN && filter.boolean !== undefined && criteria.length === 1) return;
-    if (kind === PropertyKind.INTEGER && criteria.length <= 2 && (filter.integerFrom !== undefined || filter.integerTo !== undefined)) {
+    if (
+      kind === PropertyKind.INTEGER &&
+      criteria.length <= 2 &&
+      (filter.integerFrom !== undefined || filter.integerTo !== undefined)
+    ) {
       this.assertIntegerRange(filter);
       return;
     }
-    if (kind === PropertyKind.DECIMAL && criteria.length <= 2 && (filter.decimalFrom !== undefined || filter.decimalTo !== undefined)) {
+    if (
+      kind === PropertyKind.DECIMAL &&
+      criteria.length <= 2 &&
+      (filter.decimalFrom !== undefined || filter.decimalTo !== undefined)
+    ) {
       this.assertDecimalRange(filter);
       return;
     }
-    if (kind === PropertyKind.DATE && criteria.length <= 2 && (filter.dateFrom !== undefined || filter.dateTo !== undefined)) {
+    if (
+      kind === PropertyKind.DATE &&
+      criteria.length <= 2 &&
+      (filter.dateFrom !== undefined || filter.dateTo !== undefined)
+    ) {
       this.assertDateRange(filter);
       return;
     }
@@ -79,7 +81,10 @@ export class ProductFilterService {
     const to = filter.integerTo === undefined ? undefined : BigInt(filter.integerTo);
     const minimum = -9223372036854775808n;
     const maximum = 9223372036854775807n;
-    if ((from !== undefined && (from < minimum || from > maximum)) || (to !== undefined && (to < minimum || to > maximum))) {
+    if (
+      (from !== undefined && (from < minimum || from > maximum)) ||
+      (to !== undefined && (to < minimum || to > maximum))
+    ) {
       throw new BadRequestException(`Filter ${filter.propertyCode} is outside bigint range`);
     }
     if (from !== undefined && to !== undefined && from > to) {

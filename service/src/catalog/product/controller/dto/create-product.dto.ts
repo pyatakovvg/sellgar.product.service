@@ -1,12 +1,24 @@
 import { Transform, Type } from 'class-transformer';
-import { ArrayMinSize, ArrayUnique, IsArray, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
+import {
+  ArrayMinSize,
+  ArrayUnique,
+  IsArray,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+  ValidateNested,
+} from 'class-validator';
 
 import { trimString } from '../../../../common/transformer/trim-string.transformer';
-import { ProductCodeDto } from './product-code.dto';
 import { PropertyAssignmentDto } from './property-assignment.dto';
 import { VariantInputDto } from './variant-input.dto';
 
-export class CreateProductDto extends ProductCodeDto {
+export class CreateProductDto {
   @IsUUID()
   typeUuid: string;
 
@@ -40,7 +52,6 @@ export class CreateProductDto extends ProductCodeDto {
 
   @IsArray()
   @ArrayMinSize(1)
-  @ArrayUnique((variant: VariantInputDto) => variant.code)
   @ValidateNested({ each: true })
   @Type(() => VariantInputDto)
   variants: VariantInputDto[];

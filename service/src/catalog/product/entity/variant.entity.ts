@@ -5,7 +5,7 @@ import { ProductFieldEntity } from './product-field.entity';
 import { VariantImageEntity } from './variant-image.entity';
 
 export class VariantEntity {
-  code: string;
+  uuid: string;
   name: string;
   description: string | null;
   status: ProductStatus;
@@ -17,7 +17,7 @@ export class VariantEntity {
   static fromModel(model: VariantModel, fields: TypeVariantFieldModel[]): VariantEntity {
     const assignments = new Map((model.properties ?? []).map((assignment) => [assignment.propertyCode, assignment]));
     return {
-      code: model.code,
+      uuid: model.uuid,
       name: model.name,
       description: model.description,
       status: model.status,

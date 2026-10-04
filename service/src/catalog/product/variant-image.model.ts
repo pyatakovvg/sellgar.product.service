@@ -6,8 +6,8 @@ import { VariantModel } from './variant.model';
 @Entity('variant_image')
 @Check('variant_image_sort_order_nonnegative', 'sort_order >= 0')
 export class VariantImageModel {
-  @PrimaryColumn({ name: 'variant_code', type: 'varchar', length: 256 })
-  variantCode: string;
+  @PrimaryColumn({ name: 'variant_uuid', type: 'uuid' })
+  variantUuid: string;
 
   @PrimaryColumn({ name: 'image_uuid', type: 'uuid' })
   imageUuid: string;
@@ -16,7 +16,11 @@ export class VariantImageModel {
   sortOrder: number;
 
   @ManyToOne(() => VariantModel, (variant) => variant.images, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'variant_code', referencedColumnName: 'code', foreignKeyConstraintName: 'variant_image_variant_fk' })
+  @JoinColumn({
+    name: 'variant_uuid',
+    referencedColumnName: 'uuid',
+    foreignKeyConstraintName: 'variant_image_variant_fk',
+  })
   variant: VariantModel;
 
   @ManyToOne(() => ImageModel, { onDelete: 'RESTRICT' })

@@ -1,6 +1,15 @@
 import { Type } from 'class-transformer';
 import { Transform } from 'class-transformer';
-import { ArrayUnique, IsArray, IsOptional, IsString, MaxLength, MinLength, ValidateIf, ValidateNested } from 'class-validator';
+import {
+  ArrayUnique,
+  IsArray,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+  ValidateIf,
+  ValidateNested,
+} from 'class-validator';
 
 import { trimString } from '../../../../common/transformer/trim-string.transformer';
 import { BrandCodeDto } from './brand-code.dto';

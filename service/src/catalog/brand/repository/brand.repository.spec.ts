@@ -19,7 +19,13 @@ describe('Brand updates and explicit image replacement', () => {
   beforeEach(() => jest.clearAllMocks());
 
   function existingBrand() {
-    return { code: 'brand', name: 'Old name', description: 'Keep this', version: 2, images: [{ imageUuid, sortOrder: 0 }] };
+    return {
+      code: 'brand',
+      name: 'Old name',
+      description: 'Keep this',
+      version: 2,
+      images: [{ imageUuid, sortOrder: 0 }],
+    };
   }
 
   it('preserves omitted description and images while incrementing the version', async () => {
@@ -28,7 +34,13 @@ describe('Brand updates and explicit image replacement', () => {
     manager.save.mockImplementation(async (_model: unknown, value: unknown) => value);
 
     const result = await repository.update('brand', 2, 'New name');
-    expect(result).toMatchObject({ code: 'brand', name: 'New name', description: 'Keep this', version: 3, images: [{ imageUuid }] });
+    expect(result).toMatchObject({
+      code: 'brand',
+      name: 'New name',
+      description: 'Keep this',
+      version: 3,
+      images: [{ imageUuid }],
+    });
     expect(manager.delete).not.toHaveBeenCalled();
     expect(manager.insert).not.toHaveBeenCalled();
   });
@@ -51,7 +63,9 @@ describe('Brand updates and explicit image replacement', () => {
   it('rejects missing image references before deleting existing links', async () => {
     manager.findOne.mockResolvedValue(existingBrand());
     manager.find.mockResolvedValue([]);
-    await expect(repository.update('brand', 2, undefined, undefined, [{ imageUuid }])).rejects.toThrow(NotFoundException);
+    await expect(repository.update('brand', 2, undefined, undefined, [{ imageUuid }])).rejects.toThrow(
+      NotFoundException,
+    );
     expect(manager.delete).not.toHaveBeenCalled();
   });
 

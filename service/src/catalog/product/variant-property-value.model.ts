@@ -6,14 +6,17 @@ import { VariantPropertyModel } from './variant-property.model';
 
 @Entity('variant_property_value')
 @Check('variant_property_value_position_nonnegative', 'position >= 0')
-@Check('variant_property_value_shape', `
+@Check(
+  'variant_property_value_shape',
+  `
   (property_kind = 'TEXT' AND value_text IS NOT NULL AND value_integer IS NULL AND value_decimal IS NULL AND value_boolean IS NULL AND value_date IS NULL AND value_option_code IS NULL)
   OR (property_kind = 'INTEGER' AND value_text IS NULL AND value_integer IS NOT NULL AND value_decimal IS NULL AND value_boolean IS NULL AND value_date IS NULL AND value_option_code IS NULL)
   OR (property_kind = 'DECIMAL' AND value_text IS NULL AND value_integer IS NULL AND value_decimal IS NOT NULL AND value_boolean IS NULL AND value_date IS NULL AND value_option_code IS NULL)
   OR (property_kind = 'BOOLEAN' AND value_text IS NULL AND value_integer IS NULL AND value_decimal IS NULL AND value_boolean IS NOT NULL AND value_date IS NULL AND value_option_code IS NULL)
   OR (property_kind = 'DATE' AND value_text IS NULL AND value_integer IS NULL AND value_decimal IS NULL AND value_boolean IS NULL AND value_date IS NOT NULL AND value_option_code IS NULL)
   OR (property_kind = 'OPTIONS' AND value_text IS NULL AND value_integer IS NULL AND value_decimal IS NULL AND value_boolean IS NULL AND value_date IS NULL AND value_option_code IS NOT NULL)
-`)
+`,
+)
 @Index('variant_property_value_text_idx', ['propertyCode', 'valueText'])
 @Index('variant_property_value_integer_idx', ['propertyCode', 'valueInteger'])
 @Index('variant_property_value_decimal_idx', ['propertyCode', 'valueDecimal'])
@@ -21,8 +24,8 @@ import { VariantPropertyModel } from './variant-property.model';
 @Index('variant_property_value_date_idx', ['propertyCode', 'valueDate'])
 @Index('variant_property_value_option_code_idx', ['propertyCode', 'valueOptionCode'])
 export class VariantPropertyValueModel {
-  @PrimaryColumn({ name: 'variant_code', type: 'varchar', length: 256 })
-  variantCode: string;
+  @PrimaryColumn({ name: 'variant_uuid', type: 'uuid' })
+  variantUuid: string;
 
   @PrimaryColumn({ name: 'type_uuid', type: 'uuid' })
   typeUuid: string;
@@ -56,9 +59,17 @@ export class VariantPropertyValueModel {
 
   @ManyToOne(() => VariantPropertyModel, (assignment) => assignment.values, { onDelete: 'CASCADE' })
   @JoinColumn([
-    { name: 'variant_code', referencedColumnName: 'variantCode', foreignKeyConstraintName: 'variant_property_value_assignment_fk' },
+    {
+      name: 'variant_uuid',
+      referencedColumnName: 'variantUuid',
+      foreignKeyConstraintName: 'variant_property_value_assignment_fk',
+    },
     { name: 'type_uuid', referencedColumnName: 'typeUuid' },
-    { name: 'property_code', referencedColumnName: 'propertyCode', foreignKeyConstraintName: 'variant_property_value_option_fk' },
+    {
+      name: 'property_code',
+      referencedColumnName: 'propertyCode',
+      foreignKeyConstraintName: 'variant_property_value_option_fk',
+    },
     { name: 'property_kind', referencedColumnName: 'propertyKind' },
   ])
   assignment: VariantPropertyModel;

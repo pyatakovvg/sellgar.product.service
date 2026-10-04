@@ -1,4 +1,5 @@
 import { NotFoundException } from '@nestjs/common';
+import { plainToInstance } from 'class-transformer';
 
 import { Image } from '../../domain/image';
 import { CreateImageCommand } from '../command/create-image.command';
@@ -20,13 +21,13 @@ describe('ImageService', () => {
   beforeEach(() => jest.clearAllMocks());
 
   it('projects CREATE as the initial domain version', async () => {
-    await service.create(new CreateImageCommand(imageUuid, 'shirt.png'));
+    await service.create(plainToInstance(CreateImageCommand, { uuid: imageUuid, name: 'shirt.png' }));
 
     expect(repository.insertIfAbsent).toHaveBeenCalledWith(new Image(imageUuid, 'shirt.png', 1));
   });
 
   it('converts the source previous version into the next projection version', async () => {
-    await service.update(new UpdateImageCommand(imageUuid, 'renamed.png', 4));
+    await service.update(plainToInstance(UpdateImageCommand, { uuid: imageUuid, name: 'renamed.png', version: 4 }));
 
     expect(repository.upsertIfNewer).toHaveBeenCalledWith(new Image(imageUuid, 'renamed.png', 5));
   });
@@ -35,13 +36,15 @@ describe('ImageService', () => {
     const image = new Image(imageUuid, 'shirt.png', 3);
     repository.findByUuid.mockResolvedValue(image);
 
-    await expect(service.getByUuid(new GetImageQuery(imageUuid))).resolves.toEqual(image);
+    await expect(service.getByUuid(plainToInstance(GetImageQuery, { uuid: imageUuid }))).resolves.toEqual(image);
     expect(repository.findByUuid).toHaveBeenCalledWith(imageUuid);
   });
 
   it('reports a missing projection', async () => {
     repository.findByUuid.mockResolvedValue(null);
 
-    await expect(service.getByUuid(new GetImageQuery(imageUuid))).rejects.toBeInstanceOf(NotFoundException);
+    await expect(service.getByUuid(plainToInstance(GetImageQuery, { uuid: imageUuid }))).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 });

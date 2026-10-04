@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
+import { plainToInstance } from 'class-transformer';
 
 import { ProductTypeRepository } from '../../product-type/repository/product-type.repository';
 import { ProductEntity } from '../entity/product.entity';
@@ -6,6 +7,7 @@ import { ProductPageEntity } from '../entity/product-page.entity';
 import { ProductStatus } from '../product-status.enum';
 import { ProductRepository } from '../repository/product.repository';
 import { CreateProductCommand } from './command/create-product.command';
+import { CreateVariantCommand } from './command/create-variant.command';
 import { UpdateProductCommand } from './command/update-product.command';
 import { UpdateVariantCommand } from './command/update-variant.command';
 import { VariantImageCommand } from './command/variant-image.command';
@@ -35,8 +37,8 @@ export class ProductService {
     return { ...page, items: page.items.map(ProductEntity.fromModel) };
   }
 
-  async getByCode(code: string): Promise<ProductEntity> {
-    return ProductEntity.fromModel(await this.repository.getByCode(code));
+  async getByUuid(uuid: string): Promise<ProductEntity> {
+    return ProductEntity.fromModel(await this.repository.getByUuid(uuid));
   }
 
   async create(command: CreateProductCommand): Promise<ProductEntity> {
@@ -46,105 +48,92 @@ export class ProductService {
     const productProperties = this.assignmentService.forCreate(
       productType.productFields,
       command.properties,
-      `product ${command.code}`,
+      'product',
     );
-    const variantCodes = new Set<string>();
-    const variants = command.variants.map((variant) => {
-      if (variantCodes.has(variant.code)) throw new BadRequestException(`Duplicate variant code ${variant.code}`);
-      variantCodes.add(variant.code);
-      return new VariantInputCommand(
-        variant.code,
-        variant.name,
-        variant.description,
-        this.assignmentService.forCreate(productType.variantFields, variant.properties ?? [], `variant ${variant.code}`),
-        this.normalizeImages(variant.images ?? []),
-      );
-    });
-    return ProductEntity.fromModel(await this.repository.create(new CreateProductCommand(
-      command.code,
-      command.typeUuid,
-      command.typeVersion,
-      command.name,
-      command.brandCode,
-      command.description,
-      productProperties,
+    const variants = command.variants.map((variant, index) =>
+      plainToInstance(VariantInputCommand, {
+        ...variant,
+        properties: this.assignmentService.forCreate(
+          productType.variantFields,
+          variant.properties ?? [],
+          `variant ${index + 1}`,
+        ),
+        images: this.normalizeImages(variant.images ?? []),
+      }),
+    );
+    const normalized = plainToInstance(CreateProductCommand, {
+      ...command,
+      properties: productProperties,
       variants,
-    )));
+    });
+    return ProductEntity.fromModel(await this.repository.create(normalized));
   }
 
   async update(command: UpdateProductCommand): Promise<ProductEntity> {
-    const product = await this.repository.getByCode(command.code);
+    const product = await this.repository.getByUuid(command.uuid);
     this.assertTypeVersion(product.productType.version, command.typeVersion);
-    const properties = command.properties === undefined
-      ? undefined
-      : this.assignmentService.forPatch(product.productType.productFields, command.properties, `product ${command.code}`);
-    return ProductEntity.fromModel(await this.repository.update(new UpdateProductCommand(
-      command.code,
-      command.version,
-      command.typeVersion,
-      command.name,
-      command.description,
-      command.brandCode,
-      properties,
-    )));
+    const properties =
+      command.properties === undefined
+        ? undefined
+        : this.assignmentService.forPatch(
+            product.productType.productFields,
+            command.properties,
+            `product ${command.uuid}`,
+          );
+    const normalized = plainToInstance(UpdateProductCommand, { ...command, properties });
+    return ProductEntity.fromModel(await this.repository.update(normalized));
   }
 
-  async createVariant(
-    productCode: string,
-    version: number,
-    typeVersion: number,
-    variant: VariantInputCommand,
-  ): Promise<ProductEntity> {
-    const product = await this.repository.getByCode(productCode);
-    this.assertTypeVersion(product.productType.version, typeVersion);
-    const normalized = new VariantInputCommand(
-      variant.code,
-      variant.name,
-      variant.description,
-      this.assignmentService.forCreate(product.productType.variantFields, variant.properties ?? [], `variant ${variant.code}`),
-      this.normalizeImages(variant.images ?? []),
+  async createVariant(command: CreateVariantCommand): Promise<ProductEntity> {
+    const product = await this.repository.getByUuid(command.productUuid);
+    this.assertTypeVersion(product.productType.version, command.typeVersion);
+    const variant = plainToInstance(VariantInputCommand, {
+      ...command.variant,
+      properties: this.assignmentService.forCreate(
+        product.productType.variantFields,
+        command.variant.properties ?? [],
+        'variant',
+      ),
+      images: this.normalizeImages(command.variant.images ?? []),
+    });
+    return ProductEntity.fromModel(
+      await this.repository.createVariant(command.productUuid, command.version, command.typeVersion, variant),
     );
-    return ProductEntity.fromModel(await this.repository.createVariant(productCode, version, typeVersion, normalized));
   }
 
   async updateVariant(command: UpdateVariantCommand): Promise<ProductEntity> {
-    const product = await this.repository.getByCode(command.productCode);
+    const product = await this.repository.getByUuid(command.productUuid);
     this.assertTypeVersion(product.productType.version, command.typeVersion);
-    const properties = command.properties === undefined
-      ? undefined
-      : this.assignmentService.forPatch(product.productType.variantFields, command.properties, `variant ${command.variantCode}`);
-    const images = command.images === undefined
-      ? undefined
-      : this.normalizeImages(command.images);
-    return ProductEntity.fromModel(await this.repository.updateVariant(new UpdateVariantCommand(
-      command.productCode,
-      command.variantCode,
-      command.version,
-      command.typeVersion,
-      command.name,
-      command.description,
-      properties,
-      images,
-    )));
+    const properties =
+      command.properties === undefined
+        ? undefined
+        : this.assignmentService.forPatch(
+            product.productType.variantFields,
+            command.properties,
+            `variant ${command.variantUuid}`,
+          );
+    const images = command.images === undefined ? undefined : this.normalizeImages(command.images);
+    const normalized = plainToInstance(UpdateVariantCommand, { ...command, properties, images });
+    return ProductEntity.fromModel(await this.repository.updateVariant(normalized));
   }
 
-  async archive(code: string, version: number): Promise<ProductEntity> {
-    return ProductEntity.fromModel(await this.repository.changeProductStatus(code, version, ProductStatus.ARCHIVED));
+  async archive(uuid: string, version: number): Promise<ProductEntity> {
+    return ProductEntity.fromModel(await this.repository.changeProductStatus(uuid, version, ProductStatus.ARCHIVED));
   }
 
-  async restore(code: string, version: number): Promise<ProductEntity> {
-    return ProductEntity.fromModel(await this.repository.changeProductStatus(code, version, ProductStatus.ACTIVE));
+  async restore(uuid: string, version: number): Promise<ProductEntity> {
+    return ProductEntity.fromModel(await this.repository.changeProductStatus(uuid, version, ProductStatus.ACTIVE));
   }
 
-  async archiveVariant(productCode: string, variantCode: string, version: number): Promise<ProductEntity> {
+  async archiveVariant(productUuid: string, variantUuid: string, version: number): Promise<ProductEntity> {
     return ProductEntity.fromModel(
-      await this.repository.changeVariantStatus(productCode, variantCode, version, ProductStatus.ARCHIVED),
+      await this.repository.changeVariantStatus(productUuid, variantUuid, version, ProductStatus.ARCHIVED),
     );
   }
 
-  async restoreVariant(productCode: string, variantCode: string, version: number): Promise<ProductEntity> {
+  async restoreVariant(productUuid: string, variantUuid: string, version: number): Promise<ProductEntity> {
     return ProductEntity.fromModel(
-      await this.repository.changeVariantStatus(productCode, variantCode, version, ProductStatus.ACTIVE),
+      await this.repository.changeVariantStatus(productUuid, variantUuid, version, ProductStatus.ACTIVE),
     );
   }
 
@@ -154,7 +143,7 @@ export class ProductService {
       const uuid = image.imageUuid.toLowerCase();
       if (uuids.has(uuid)) throw new BadRequestException(`Duplicate variant image ${image.imageUuid}`);
       uuids.add(uuid);
-      return new VariantImageCommand(uuid, image.sortOrder ?? index);
+      return plainToInstance(VariantImageCommand, { imageUuid: uuid, sortOrder: image.sortOrder ?? index });
     });
   }
 

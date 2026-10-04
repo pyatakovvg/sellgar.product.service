@@ -6,10 +6,10 @@ import { VariantModel } from './variant.model';
 import { VariantPropertyValueModel } from './variant-property-value.model';
 
 @Entity('variant_property')
-@Unique('variant_property_value_owner_unique', ['variantCode', 'typeUuid', 'propertyCode', 'propertyKind'])
+@Unique('variant_property_value_owner_unique', ['variantUuid', 'typeUuid', 'propertyCode', 'propertyKind'])
 export class VariantPropertyModel {
-  @PrimaryColumn({ name: 'variant_code', type: 'varchar', length: 256 })
-  variantCode: string;
+  @PrimaryColumn({ name: 'variant_uuid', type: 'uuid' })
+  variantUuid: string;
 
   @PrimaryColumn({ name: 'type_uuid', type: 'uuid' })
   typeUuid: string;
@@ -22,7 +22,7 @@ export class VariantPropertyModel {
 
   @ManyToOne(() => VariantModel, (variant) => variant.properties, { onDelete: 'CASCADE' })
   @JoinColumn([
-    { name: 'variant_code', referencedColumnName: 'code', foreignKeyConstraintName: 'variant_property_variant_fk' },
+    { name: 'variant_uuid', referencedColumnName: 'uuid', foreignKeyConstraintName: 'variant_property_variant_fk' },
     { name: 'type_uuid', referencedColumnName: 'typeUuid', foreignKeyConstraintName: 'variant_property_type_field_fk' },
   ])
   variant: VariantModel;

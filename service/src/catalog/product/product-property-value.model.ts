@@ -6,14 +6,17 @@ import { ProductPropertyModel } from './product-property.model';
 
 @Entity('product_property_value')
 @Check('product_property_value_position_nonnegative', 'position >= 0')
-@Check('product_property_value_shape', `
+@Check(
+  'product_property_value_shape',
+  `
   (property_kind = 'TEXT' AND value_text IS NOT NULL AND value_integer IS NULL AND value_decimal IS NULL AND value_boolean IS NULL AND value_date IS NULL AND value_option_code IS NULL)
   OR (property_kind = 'INTEGER' AND value_text IS NULL AND value_integer IS NOT NULL AND value_decimal IS NULL AND value_boolean IS NULL AND value_date IS NULL AND value_option_code IS NULL)
   OR (property_kind = 'DECIMAL' AND value_text IS NULL AND value_integer IS NULL AND value_decimal IS NOT NULL AND value_boolean IS NULL AND value_date IS NULL AND value_option_code IS NULL)
   OR (property_kind = 'BOOLEAN' AND value_text IS NULL AND value_integer IS NULL AND value_decimal IS NULL AND value_boolean IS NOT NULL AND value_date IS NULL AND value_option_code IS NULL)
   OR (property_kind = 'DATE' AND value_text IS NULL AND value_integer IS NULL AND value_decimal IS NULL AND value_boolean IS NULL AND value_date IS NOT NULL AND value_option_code IS NULL)
   OR (property_kind = 'OPTIONS' AND value_text IS NULL AND value_integer IS NULL AND value_decimal IS NULL AND value_boolean IS NULL AND value_date IS NULL AND value_option_code IS NOT NULL)
-`)
+`,
+)
 @Index('product_property_value_text_idx', ['propertyCode', 'valueText'])
 @Index('product_property_value_integer_idx', ['propertyCode', 'valueInteger'])
 @Index('product_property_value_decimal_idx', ['propertyCode', 'valueDecimal'])
@@ -21,8 +24,8 @@ import { ProductPropertyModel } from './product-property.model';
 @Index('product_property_value_date_idx', ['propertyCode', 'valueDate'])
 @Index('product_property_value_option_code_idx', ['propertyCode', 'valueOptionCode'])
 export class ProductPropertyValueModel {
-  @PrimaryColumn({ name: 'product_code', type: 'varchar', length: 256 })
-  productCode: string;
+  @PrimaryColumn({ name: 'product_uuid', type: 'uuid' })
+  productUuid: string;
 
   @PrimaryColumn({ name: 'type_uuid', type: 'uuid' })
   typeUuid: string;
@@ -56,9 +59,17 @@ export class ProductPropertyValueModel {
 
   @ManyToOne(() => ProductPropertyModel, (assignment) => assignment.values, { onDelete: 'CASCADE' })
   @JoinColumn([
-    { name: 'product_code', referencedColumnName: 'productCode', foreignKeyConstraintName: 'product_property_value_assignment_fk' },
+    {
+      name: 'product_uuid',
+      referencedColumnName: 'productUuid',
+      foreignKeyConstraintName: 'product_property_value_assignment_fk',
+    },
     { name: 'type_uuid', referencedColumnName: 'typeUuid' },
-    { name: 'property_code', referencedColumnName: 'propertyCode', foreignKeyConstraintName: 'product_property_value_option_fk' },
+    {
+      name: 'property_code',
+      referencedColumnName: 'propertyCode',
+      foreignKeyConstraintName: 'product_property_value_option_fk',
+    },
     { name: 'property_kind', referencedColumnName: 'propertyKind' },
   ])
   assignment: ProductPropertyModel;

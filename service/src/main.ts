@@ -33,6 +33,7 @@ async function bootstrap(): Promise<void> {
         exchange: requiredEnvironment(env, 'PRODUCT_EVENTS_EXCHANGE'),
         exchangeType: 'topic',
         wildcards: true,
+        noAck: false,
       },
     }, { inheritAppConfig: true });
 

@@ -1,4 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { plainToInstance } from 'class-transformer';
+import { validateOrReject } from 'class-validator';
 
 import { ProductTypeEntity } from '../entity/product-type.entity';
 import { ProductTypePageEntity } from '../entity/product-type-page.entity';
@@ -23,19 +25,28 @@ export class ProductTypeService {
   async create(command: CreateProductTypeCommand): Promise<ProductTypeEntity> {
     const productFields = this.normalizeFields(command.productFields ?? []);
     const variantFields = this.normalizeFields(command.variantFields ?? []);
-    return ProductTypeEntity.fromModel(
-      await this.repository.create(new CreateProductTypeCommand(command.name, productFields, variantFields)),
-    );
+    const normalized = plainToInstance(CreateProductTypeCommand, {
+      name: command.name,
+      productFields,
+      variantFields,
+    });
+
+    await validateOrReject(normalized, { whitelist: true, forbidNonWhitelisted: true });
+
+    return ProductTypeEntity.fromModel(await this.repository.create(normalized));
   }
 
   async update(command: UpdateProductTypeCommand): Promise<ProductTypeEntity> {
-    const normalized = new UpdateProductTypeCommand(
-      command.uuid,
-      command.version,
-      command.name,
-      command.productFields === undefined ? undefined : this.normalizeFields(command.productFields),
-      command.variantFields === undefined ? undefined : this.normalizeFields(command.variantFields),
-    );
+    const normalized = plainToInstance(UpdateProductTypeCommand, {
+      uuid: command.uuid,
+      version: command.version,
+      name: command.name,
+      productFields: command.productFields === undefined ? undefined : this.normalizeFields(command.productFields),
+      variantFields: command.variantFields === undefined ? undefined : this.normalizeFields(command.variantFields),
+    });
+
+    await validateOrReject(normalized, { whitelist: true, forbidNonWhitelisted: true });
+
     return ProductTypeEntity.fromModel(await this.repository.update(normalized));
   }
 
@@ -51,11 +62,11 @@ export class ProductTypeService {
   }
 
   private normalizeField(field: ProductTypeFieldCommand, defaultOrder: number): ProductTypeFieldCommand {
-    return new ProductTypeFieldCommand(
-      field.propertyCode,
-      field.required ?? false,
-      field.multiple ?? false,
-      field.sortOrder ?? defaultOrder,
-    );
+    return plainToInstance(ProductTypeFieldCommand, {
+      propertyCode: field.propertyCode,
+      required: field.required ?? false,
+      multiple: field.multiple ?? false,
+      sortOrder: field.sortOrder ?? defaultOrder,
+    });
   }
 }

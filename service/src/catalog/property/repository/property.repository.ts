@@ -11,12 +11,19 @@ import { PropertyOptionCommand } from '../service/command/property-option.comman
 import { PropertyOptionExtraCommand } from '../service/command/property-option-extra.command';
 import { UpdatePropertyCommand } from '../service/command/update-property.command';
 import { UpdatePropertyOptionCommand } from '../service/command/update-property-option.command';
+import { ProductOutboxService } from '../../../integration/outbox/product-outbox.service';
 
 @Injectable()
 export class PropertyRepository {
-  constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
+  constructor(
+    @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly productOutbox: ProductOutboxService,
+  ) {}
 
-  async getAll(limit: number, offset: number): Promise<{ items: PropertyModel[]; total: number; limit: number; offset: number }> {
+  async getAll(
+    limit: number,
+    offset: number,
+  ): Promise<{ items: PropertyModel[]; total: number; limit: number; offset: number }> {
     const [items, total] = await this.dataSource.getRepository(PropertyModel).findAndCount({
       relations: { options: { extras: true } },
       order: {
@@ -63,6 +70,7 @@ export class PropertyRepository {
       property.description = description;
       property.version += 1;
       await manager.save(PropertyModel, property);
+      await this.productOutbox.touchByProperty(manager, dto.code);
       return this.readProperty(manager, dto.code);
     });
   }
@@ -75,6 +83,7 @@ export class PropertyRepository {
         await this.insertOption(manager, propertyCode, option);
         property.version += 1;
         await manager.save(PropertyModel, property);
+        await this.productOutbox.touchByProperty(manager, propertyCode);
         return this.readProperty(manager, propertyCode);
       });
     } catch (error) {
@@ -89,10 +98,13 @@ export class PropertyRepository {
         this.assertOptionsProperty(property);
         const option = await manager.findOne(PropertyOptionModel, {
           where: { propertyCode: dto.code, code: dto.optionCode },
-          relations: { extras: true },
           lock: { mode: 'pessimistic_write' },
         });
         if (!option) throw new NotFoundException(`Option ${dto.code}/${dto.optionCode} not found`);
+        option.extras = await manager.find(PropertyOptionExtraModel, {
+          where: { propertyCode: dto.code, optionCode: dto.optionCode },
+          order: { sortOrder: 'ASC', type: 'ASC' },
+        });
 
         const name = dto.name ?? option.name;
         const sortOrder = dto.sortOrder ?? option.sortOrder;
@@ -102,11 +114,16 @@ export class PropertyRepository {
         }
 
         if (name !== option.name || sortOrder !== option.sortOrder) {
-          await manager.update(PropertyOptionModel, { propertyCode: dto.code, code: dto.optionCode }, { name, sortOrder });
+          await manager.update(
+            PropertyOptionModel,
+            { propertyCode: dto.code, code: dto.optionCode },
+            { name, sortOrder },
+          );
         }
         if (dto.extras !== undefined) await this.replaceExtras(manager, dto.code, dto.optionCode, dto.extras);
         property.version += 1;
         await manager.save(PropertyModel, property);
+        await this.productOutbox.touchByProperty(manager, dto.code);
         return this.readProperty(manager, dto.code);
       });
     } catch (error) {
@@ -127,7 +144,11 @@ export class PropertyRepository {
     }
   }
 
-  private async insertOption(manager: EntityManager, propertyCode: string, option: PropertyOptionCommand): Promise<void> {
+  private async insertOption(
+    manager: EntityManager,
+    propertyCode: string,
+    option: PropertyOptionCommand,
+  ): Promise<void> {
     await manager.insert(PropertyOptionModel, {
       propertyCode,
       code: option.code,
@@ -154,19 +175,25 @@ export class PropertyRepository {
     extras: NonNullable<PropertyOptionCommand['extras']>,
   ): Promise<void> {
     if (extras.length === 0) return;
-    await manager.insert(PropertyOptionExtraModel, extras.map((extra) => ({
-      propertyCode,
-      optionCode,
-      type: extra.type,
-      sortOrder: extra.sortOrder ?? 0,
-      textDisplay: extra.textDisplay ?? null,
-      valueText: extra.valueText ?? null,
-      valueColor: extra.valueColor ?? null,
-      imageUuid: extra.imageUuid ?? null,
-    })));
+    await manager.insert(
+      PropertyOptionExtraModel,
+      extras.map((extra) => ({
+        propertyCode,
+        optionCode,
+        type: extra.type,
+        sortOrder: extra.sortOrder ?? 0,
+        textDisplay: extra.textDisplay ?? null,
+        valueText: extra.valueText ?? null,
+        valueColor: extra.valueColor ?? null,
+        imageUuid: extra.imageUuid ?? null,
+      })),
+    );
   }
 
-  private sameExtras(current: PropertyOptionExtraModel[], incoming: NonNullable<PropertyOptionCommand['extras']>): boolean {
+  private sameExtras(
+    current: PropertyOptionExtraModel[],
+    incoming: NonNullable<PropertyOptionCommand['extras']>,
+  ): boolean {
     const normalize = (extra: {
       type: PropertyOptionExtraCommand['type'];
       sortOrder?: number;
@@ -182,12 +209,16 @@ export class PropertyRepository {
       valueColor: extra.valueColor ?? null,
       imageUuid: extra.imageUuid ?? null,
     });
-    return JSON.stringify(current.map(normalize).sort(this.compareExtras)) ===
-      JSON.stringify(incoming.map(normalize).sort(this.compareExtras));
+    return (
+      JSON.stringify(current.map(normalize).sort(this.compareExtras)) ===
+      JSON.stringify(incoming.map(normalize).sort(this.compareExtras))
+    );
   }
 
-  private readonly compareExtras = (left: { sortOrder?: number; type: string }, right: { sortOrder?: number; type: string }) =>
-    (left.sortOrder ?? 0) - (right.sortOrder ?? 0) || left.type.localeCompare(right.type);
+  private readonly compareExtras = (
+    left: { sortOrder?: number; type: string },
+    right: { sortOrder?: number; type: string },
+  ) => (left.sortOrder ?? 0) - (right.sortOrder ?? 0) || left.type.localeCompare(right.type);
 
   private async readProperty(manager: EntityManager, code: string): Promise<PropertyModel> {
     const property = await manager.findOne(PropertyModel, {
@@ -203,7 +234,8 @@ export class PropertyRepository {
     if (!(error instanceof QueryFailedError)) return error;
     const databaseCode = (error.driverError as { code?: string }).code;
     if (databaseCode === '23505') return new ConflictException(`Property or option code already exists for ${code}`);
-    if (databaseCode === '23503') return new BadRequestException(`Property ${code} references an unknown unit or image`);
+    if (databaseCode === '23503')
+      return new BadRequestException(`Property ${code} references an unknown unit or image`);
     if (databaseCode === '23514') return new BadRequestException(`Property ${code} violates a value constraint`);
     return error;
   }

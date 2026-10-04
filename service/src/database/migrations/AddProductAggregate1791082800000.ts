@@ -9,7 +9,7 @@ export class AddProductAggregate1791082800000 implements MigrationInterface {
     await queryRunner.query(`CREATE TYPE product_status_enum AS ENUM ('active', 'archived')`);
     await queryRunner.query(`
       CREATE TABLE product (
-        code varchar(256) PRIMARY KEY,
+        uuid uuid PRIMARY KEY,
         type_uuid uuid NOT NULL,
         name varchar(256) NOT NULL,
         description text,
@@ -19,61 +19,61 @@ export class AddProductAggregate1791082800000 implements MigrationInterface {
         created_at timestamptz NOT NULL DEFAULT now(),
         updated_at timestamptz NOT NULL DEFAULT now(),
         CONSTRAINT product_version_positive CHECK (version > 0),
-        CONSTRAINT product_code_type_unique UNIQUE (code, type_uuid),
+        CONSTRAINT product_uuid_type_unique UNIQUE (uuid, type_uuid),
         CONSTRAINT product_type_fk FOREIGN KEY (type_uuid) REFERENCES product_type(uuid) ON DELETE RESTRICT,
         CONSTRAINT product_brand_fk FOREIGN KEY (brand_code) REFERENCES brand(code) ON DELETE RESTRICT
       )
     `);
     await queryRunner.query(`
       CREATE TABLE variant (
-        code varchar(256) PRIMARY KEY,
-        product_code varchar(256) NOT NULL,
+        uuid uuid PRIMARY KEY,
+        product_uuid uuid NOT NULL,
         type_uuid uuid NOT NULL,
         name varchar(256) NOT NULL,
         description text,
         status product_status_enum NOT NULL DEFAULT 'active',
         created_at timestamptz NOT NULL DEFAULT now(),
         updated_at timestamptz NOT NULL DEFAULT now(),
-        CONSTRAINT variant_code_type_unique UNIQUE (code, type_uuid),
-        CONSTRAINT variant_product_fk FOREIGN KEY (product_code, type_uuid) REFERENCES product(code, type_uuid) ON DELETE RESTRICT
+        CONSTRAINT variant_uuid_type_unique UNIQUE (uuid, type_uuid),
+        CONSTRAINT variant_product_fk FOREIGN KEY (product_uuid, type_uuid) REFERENCES product(uuid, type_uuid) ON DELETE RESTRICT
       )
     `);
     await queryRunner.query(`
       CREATE TABLE product_property (
-        product_code varchar(256) NOT NULL,
+        product_uuid uuid NOT NULL,
         type_uuid uuid NOT NULL,
         property_code varchar(256) NOT NULL,
         property_kind property_kind_enum NOT NULL,
-        PRIMARY KEY (product_code, type_uuid, property_code),
-        CONSTRAINT product_property_value_owner_unique UNIQUE (product_code, type_uuid, property_code, property_kind),
-        CONSTRAINT product_property_product_fk FOREIGN KEY (product_code, type_uuid) REFERENCES product(code, type_uuid) ON DELETE CASCADE,
+        PRIMARY KEY (product_uuid, type_uuid, property_code),
+        CONSTRAINT product_property_value_owner_unique UNIQUE (product_uuid, type_uuid, property_code, property_kind),
+        CONSTRAINT product_property_product_fk FOREIGN KEY (product_uuid, type_uuid) REFERENCES product(uuid, type_uuid) ON DELETE CASCADE,
         CONSTRAINT product_property_type_field_fk FOREIGN KEY (type_uuid, property_code, property_kind)
           REFERENCES type_product_field(type_uuid, property_code, property_kind) ON DELETE CASCADE
       )
     `);
     await queryRunner.query(`
       CREATE TABLE variant_property (
-        variant_code varchar(256) NOT NULL,
+        variant_uuid uuid NOT NULL,
         type_uuid uuid NOT NULL,
         property_code varchar(256) NOT NULL,
         property_kind property_kind_enum NOT NULL,
-        PRIMARY KEY (variant_code, type_uuid, property_code),
-        CONSTRAINT variant_property_value_owner_unique UNIQUE (variant_code, type_uuid, property_code, property_kind),
-        CONSTRAINT variant_property_variant_fk FOREIGN KEY (variant_code, type_uuid) REFERENCES variant(code, type_uuid) ON DELETE CASCADE,
+        PRIMARY KEY (variant_uuid, type_uuid, property_code),
+        CONSTRAINT variant_property_value_owner_unique UNIQUE (variant_uuid, type_uuid, property_code, property_kind),
+        CONSTRAINT variant_property_variant_fk FOREIGN KEY (variant_uuid, type_uuid) REFERENCES variant(uuid, type_uuid) ON DELETE CASCADE,
         CONSTRAINT variant_property_type_field_fk FOREIGN KEY (type_uuid, property_code, property_kind)
           REFERENCES type_variant_field(type_uuid, property_code, property_kind) ON DELETE CASCADE
       )
     `);
-    await queryRunner.query(this.createValueTable('product_property_value', 'product_code', 'product_property', 'product_property_value_assignment_fk'));
-    await queryRunner.query(this.createValueTable('variant_property_value', 'variant_code', 'variant_property', 'variant_property_value_assignment_fk'));
+    await queryRunner.query(this.createValueTable('product_property_value', 'product_uuid', 'product_property', 'product_property_value_assignment_fk'));
+    await queryRunner.query(this.createValueTable('variant_property_value', 'variant_uuid', 'variant_property', 'variant_property_value_assignment_fk'));
     await queryRunner.query(`
       CREATE TABLE variant_image (
-        variant_code varchar(256) NOT NULL,
+        variant_uuid uuid NOT NULL,
         image_uuid uuid NOT NULL,
         sort_order integer NOT NULL DEFAULT 0,
-        PRIMARY KEY (variant_code, image_uuid),
+        PRIMARY KEY (variant_uuid, image_uuid),
         CONSTRAINT variant_image_sort_order_nonnegative CHECK (sort_order >= 0),
-        CONSTRAINT variant_image_variant_fk FOREIGN KEY (variant_code) REFERENCES variant(code) ON DELETE CASCADE,
+        CONSTRAINT variant_image_variant_fk FOREIGN KEY (variant_uuid) REFERENCES variant(uuid) ON DELETE CASCADE,
         CONSTRAINT variant_image_image_fk FOREIGN KEY (image_uuid) REFERENCES image(uuid) ON DELETE RESTRICT
       )
     `);
@@ -81,7 +81,7 @@ export class AddProductAggregate1791082800000 implements MigrationInterface {
     await this.createValueIndexes(queryRunner, 'variant_property_value');
     await queryRunner.query('CREATE INDEX product_type_idx ON product(type_uuid)');
     await queryRunner.query('CREATE INDEX product_brand_idx ON product(brand_code)');
-    await queryRunner.query('CREATE INDEX variant_product_idx ON variant(product_code)');
+    await queryRunner.query('CREATE INDEX variant_product_idx ON variant(product_uuid)');
     await queryRunner.query(`
       CREATE FUNCTION prevent_catalog_record_delete() RETURNS trigger AS $$
       BEGIN
@@ -110,10 +110,10 @@ export class AddProductAggregate1791082800000 implements MigrationInterface {
   }
 
   private createValueTable(table: string, ownerColumn: string, assignmentTable: string, assignmentConstraint: string): string {
-    const ownerPrefix = ownerColumn === 'product_code' ? 'product' : 'variant';
+    const ownerPrefix = ownerColumn === 'product_uuid' ? 'product' : 'variant';
     return `
       CREATE TABLE ${table} (
-        ${ownerColumn} varchar(256) NOT NULL,
+        ${ownerColumn} uuid NOT NULL,
         type_uuid uuid NOT NULL,
         property_code varchar(256) NOT NULL,
         position integer NOT NULL,

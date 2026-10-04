@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { plainToInstance } from 'class-transformer';
 
 import { PropertyKind } from '../../property/property-kind.enum';
 import { TypeProductFieldModel } from '../../product-type/type-product-field.model';
@@ -12,7 +13,7 @@ describe('PropertyAssignmentService', () => {
   it('normalizes typed values and preserves false', () => {
     const result = service.forCreate(
       [field('available', PropertyKind.BOOLEAN, true, false)],
-      [new PropertyAssignmentCommand('available', [new PropertyValueCommand(undefined, undefined, undefined, false)])],
+      [assignment('available', { valueBoolean: false })],
       'product shirt',
     );
     expect(result[0]).toMatchObject({
@@ -29,39 +30,48 @@ describe('PropertyAssignmentService', () => {
   });
 
   it('rejects a value with the wrong typed column', () => {
-    expect(() => service.forCreate(
-      [field('height', PropertyKind.INTEGER, true, false)],
-      [new PropertyAssignmentCommand('height', [new PropertyValueCommand('100')])],
-      'product item',
-    )).toThrow(BadRequestException);
+    expect(() =>
+      service.forCreate(
+        [field('height', PropertyKind.INTEGER, true, false)],
+        [assignment('height', { valueText: '100' })],
+        'product item',
+      ),
+    ).toThrow(BadRequestException);
   });
 
   it('rejects unknown options and excess precision', () => {
-    expect(() => service.forCreate(
-      [field('material', PropertyKind.OPTIONS, true, false, ['cotton'])],
-      [new PropertyAssignmentCommand('material', [new PropertyValueCommand(undefined, undefined, undefined, undefined, undefined, 'wool')])],
-      'product shirt',
-    )).toThrow(BadRequestException);
-    expect(() => service.forCreate(
-      [field('weight', PropertyKind.DECIMAL, true, false)],
-      [new PropertyAssignmentCommand('weight', [new PropertyValueCommand(undefined, undefined, '1.1234567890123')])],
-      'product shirt',
-    )).toThrow(BadRequestException);
+    expect(() =>
+      service.forCreate(
+        [field('material', PropertyKind.OPTIONS, true, false, ['cotton'])],
+        [assignment('material', { valueOptionCode: 'wool' })],
+        'product shirt',
+      ),
+    ).toThrow(BadRequestException);
+    expect(() =>
+      service.forCreate(
+        [field('weight', PropertyKind.DECIMAL, true, false)],
+        [assignment('weight', { valueDecimal: '1.1234567890123' })],
+        'product shirt',
+      ),
+    ).toThrow(BadRequestException);
   });
 
   it('allows explicit clearing only for optional fields', () => {
-    expect(service.forPatch(
-      [field('note', PropertyKind.TEXT, false, false)],
-      [new PropertyAssignmentCommand('note', [])],
-      'variant blue',
-    )).toEqual([expect.objectContaining({ propertyCode: 'note', values: [] })]);
-    expect(() => service.forPatch(
-      [field('size', PropertyKind.TEXT, true, false)],
-      [new PropertyAssignmentCommand('size', [])],
-      'variant blue',
-    )).toThrow(BadRequestException);
+    expect(
+      service.forPatch([field('note', PropertyKind.TEXT, false, false)], [assignment('note')], 'variant blue'),
+    ).toEqual([expect.objectContaining({ propertyCode: 'note', values: [] })]);
+    expect(() =>
+      service.forPatch([field('size', PropertyKind.TEXT, true, false)], [assignment('size')], 'variant blue'),
+    ).toThrow(BadRequestException);
   });
 });
+
+function assignment(propertyCode: string, value?: Partial<PropertyValueCommand>): PropertyAssignmentCommand {
+  return plainToInstance(PropertyAssignmentCommand, {
+    propertyCode,
+    values: value === undefined ? [] : [plainToInstance(PropertyValueCommand, value)],
+  });
+}
 
 function field(
   propertyCode: string,

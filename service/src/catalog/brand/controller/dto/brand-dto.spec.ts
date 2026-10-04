@@ -22,7 +22,8 @@ describe('Brand DTO', () => {
     { code: 'brand', name: 'Brand', images: [{ imageUuid, sortOrder: -1 }] },
     { code: 'brand', name: 'Brand', images: [{ imageUuid }, { imageUuid: imageUuid.toUpperCase() }] },
   ])('rejects invalid nested images: %j', async (payload) => {
-    await expect(pipe.transform(payload, { type: 'body', metatype: CreateBrandDto }))
-      .rejects.toBeInstanceOf(BadRequestException);
+    await expect(pipe.transform(payload, { type: 'body', metatype: CreateBrandDto })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
   });
 });

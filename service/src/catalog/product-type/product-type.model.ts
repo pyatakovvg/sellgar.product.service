@@ -21,6 +21,10 @@ export class ProductTypeModel {
   @OneToMany(() => TypeVariantFieldModel, (field) => field.productType)
   variantFields: TypeVariantFieldModel[];
 
+  activeProductCount: number;
+
+  archivedProductCount: number;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt: Date;
 

@@ -33,21 +33,27 @@ describe('File image event DTOs', () => {
     };
     const pipe = new ValidationPipe({ whitelist: true, transform: true });
 
-    await expect(pipe.transform(event, { type: 'body', metatype: FileCreatedEventDto }))
-      .resolves.toEqual({ uuid: imageUuid, name: 'shirt.png' });
+    await expect(pipe.transform(event, { type: 'body', metatype: FileCreatedEventDto })).resolves.toEqual({
+      uuid: imageUuid,
+      name: 'shirt.png',
+    });
   });
 
   it('rejects malformed known event fields', async () => {
     const pipe = new ValidationPipe({ whitelist: true, transform: true });
 
-    await expect(pipe.transform(
-      { uuid: imageUuid, name: 'shirt.png', version: '1' },
-      { type: 'body', metatype: FileUpdatedEventDto },
-    )).rejects.toBeInstanceOf(BadRequestException);
-    await expect(pipe.transform(
-      { uuid: 'not-a-uuid', name: 'shirt.png', storageKey: 'ignored' },
-      { type: 'body', metatype: FileCreatedEventDto },
-    )).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      pipe.transform(
+        { uuid: imageUuid, name: 'shirt.png', version: '1' },
+        { type: 'body', metatype: FileUpdatedEventDto },
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    await expect(
+      pipe.transform(
+        { uuid: 'not-a-uuid', name: 'shirt.png', storageKey: 'ignored' },
+        { type: 'body', metatype: FileCreatedEventDto },
+      ),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it.each([undefined, 0, -1, 1.5, 2147483647])('rejects invalid previous UPDATE version: %s', async (version) => {

@@ -8,11 +8,16 @@ import { DataSource } from 'typeorm';
 
 import { Image } from '../../../domain/image';
 import { TypeOrmImageRepository } from './typeorm-image.repository';
+import { ImageProjectionWriter } from '../image-projection.writer';
 
 function postgresBinaryDirectory(): string {
-  const directory = process.env.PG_BIN ?? spawnSync('pg_config', ['--bindir'], {
-    encoding: 'utf8', timeout: 5000, killSignal: 'SIGKILL',
-  }).stdout?.trim();
+  const directory =
+    process.env.PG_BIN ??
+    spawnSync('pg_config', ['--bindir'], {
+      encoding: 'utf8',
+      timeout: 5000,
+      killSignal: 'SIGKILL',
+    }).stdout?.trim();
   if (!directory || !existsSync(join(directory, 'postgres')) || !existsSync(join(directory, 'initdb'))) {
     throw new Error('Image integration tests require PostgreSQL 16+ binaries; set PG_BIN or install pg_config.');
   }
@@ -28,9 +33,11 @@ class DisposablePostgres {
   private readonly dataDirectory = join(this.directory, 'data');
 
   initialize(): void {
-    const initialized = spawnSync(join(this.postgresBin, 'initdb'), [
-      '-D', this.dataDirectory, '-A', 'trust', '--no-locale', '--encoding=UTF8',
-    ], { encoding: 'utf8', timeout: 15000, killSignal: 'SIGKILL' });
+    const initialized = spawnSync(
+      join(this.postgresBin, 'initdb'),
+      ['-D', this.dataDirectory, '-A', 'trust', '--no-locale', '--encoding=UTF8'],
+      { encoding: 'utf8', timeout: 15000, killSignal: 'SIGKILL' },
+    );
     if (initialized.error || initialized.status !== 0) {
       throw new Error(initialized.error?.message ?? initialized.stderr);
     }
@@ -46,9 +53,11 @@ class DisposablePostgres {
     writeFileSync(inputPath, `${sql}\n`);
     const input = openSync(inputPath, 'r');
     try {
-      const result = spawnSync(join(this.postgresBin, 'postgres'), [
-        '--single', '-D', this.dataDirectory, '-j', 'postgres',
-      ], { stdio: [input, 'pipe', 'pipe'], encoding: 'utf8', timeout: 10000, killSignal: 'SIGKILL' });
+      const result = spawnSync(
+        join(this.postgresBin, 'postgres'),
+        ['--single', '-D', this.dataDirectory, '-j', 'postgres'],
+        { stdio: [input, 'pipe', 'pipe'], encoding: 'utf8', timeout: 10000, killSignal: 'SIGKILL' },
+      );
       const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
       // Single-user PostgreSQL may exit zero even after a SQL error.
       if (result.error || result.status !== 0 || /\b(?:ERROR|FATAL):/.test(output)) {
@@ -92,9 +101,12 @@ describe('TypeOrmImageRepository projection ordering (PostgreSQL 16)', () => {
   beforeAll(() => {
     postgres = new DisposablePostgres();
     postgres.initialize();
-    repository = new TypeOrmImageRepository({
-      query: (sql: string, parameters: unknown[]) => postgres.query(sql, parameters),
-    } as unknown as DataSource);
+    repository = new TypeOrmImageRepository(
+      {
+        query: (sql: string, parameters: unknown[]) => postgres.query(sql, parameters),
+      } as unknown as DataSource,
+      new ImageProjectionWriter(),
+    );
   }, 30000);
 
   beforeEach(() => postgres.execute('TRUNCATE image;'));

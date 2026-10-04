@@ -26,12 +26,12 @@ export class ProductTypeController {
   }
 
   @MessagePattern({ cmd: 'catalog.v2.productType.create' })
-  create(@Payload() dto: CreateProductTypeDto) {
-    return this.service.create(this.commandMapper.toCreateCommand(dto));
+  async create(@Payload() dto: CreateProductTypeDto) {
+    return this.service.create(await this.commandMapper.toCreateCommand(dto));
   }
 
   @MessagePattern({ cmd: 'catalog.v2.productType.update' })
-  update(@Payload() dto: UpdateProductTypeDto) {
-    return this.service.update(this.commandMapper.toUpdateCommand(dto));
+  async update(@Payload() dto: UpdateProductTypeDto) {
+    return this.service.update(await this.commandMapper.toUpdateCommand(dto));
   }
 }

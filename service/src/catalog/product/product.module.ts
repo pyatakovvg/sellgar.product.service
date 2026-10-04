@@ -9,6 +9,7 @@ import { ProductTypeModel } from '../product-type/product-type.model';
 import { TypeProductFieldModel } from '../product-type/type-product-field.model';
 import { TypeVariantFieldModel } from '../product-type/type-variant-field.model';
 import { ProductController } from './controller/product.controller';
+import { ProductCommandMapper } from './controller/mapper/product-command.mapper';
 import { ProductPropertyValueModel } from './product-property-value.model';
 import { ProductPropertyModel } from './product-property.model';
 import { ProductModel } from './product.model';
@@ -41,7 +42,7 @@ import { VariantModel } from './variant.model';
     ]),
   ],
   controllers: [ProductController],
-  providers: [ProductRepository, ProductService, PropertyAssignmentService, ProductFilterService],
+  providers: [ProductCommandMapper, ProductRepository, ProductService, PropertyAssignmentService, ProductFilterService],
   exports: [ProductRepository, ProductService, TypeOrmModule],
 })
 export class ProductModule {}

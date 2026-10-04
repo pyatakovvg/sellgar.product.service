@@ -1,8 +1,8 @@
 import { IsInt, Max, Min } from 'class-validator';
 
-import { ProductCodeDto } from './product-code.dto';
+import { ProductUuidDto } from './product-uuid.dto';
 
-export class ChangeProductStatusDto extends ProductCodeDto {
+export class ChangeProductStatusDto extends ProductUuidDto {
   @IsInt()
   @Min(1)
   @Max(2147483647)

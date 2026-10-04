@@ -19,7 +19,11 @@ export class PropertyOptionModel {
   sortOrder: number;
 
   @ManyToOne(() => PropertyModel, (property) => property.options, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'property_code', referencedColumnName: 'code', foreignKeyConstraintName: 'property_option_property_fk' })
+  @JoinColumn({
+    name: 'property_code',
+    referencedColumnName: 'code',
+    foreignKeyConstraintName: 'property_option_property_fk',
+  })
   property: PropertyModel;
 
   @OneToMany(() => PropertyOptionExtraModel, (extra) => extra.option)
