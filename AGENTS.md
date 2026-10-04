@@ -6,12 +6,16 @@
 
 - `service/` - приложение `@service/product`, источник истины для каталога
   товаров и вариантов.
+- `_service/` - сохраненная старая реализация; reference для нового приложения,
+  исключена из workspaces. Не изменять ее логику при разработке нового сервиса.
 - `library/sellgar.outbox.library/` - nested submodule с общей библиотекой
   `@sellgar/outbox`.
 
 ## Правила
 
 - Код приложения меняйте в `service/`.
+- Целевые правила нового приложения определяет RFC конструктора в workspace
+  `agent/docs/rfc-product-constructor.md`; план замены — `REWRITE-CONTRACT.md`.
 - Инфраструктурную механику transactional outbox развивайте в
   `library/sellgar.outbox.library/`.
 - Не подключайте общие библиотеки через внешние `file:` пути. Внутренние

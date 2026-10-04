@@ -1,70 +1,52 @@
-import { NestFactory } from '@nestjs/core';
-import { ConfigService } from '@nestjs/config';
 import { Logger, ValidationPipe } from '@nestjs/common';
+import { NestFactory } from '@nestjs/core';
 import { MicroserviceOptions, Transport } from '@nestjs/microservices';
 
 import { AppModule } from './app.module';
-import { RpcHttpExceptionFilter } from './common/exceptions/rpc-http-exception.filter';
+import { RpcHttpExceptionFilter } from './common/rpc-http-exception.filter';
+import { requiredEnvironment } from './database/database.options';
 
-async function bootstrap() {
-  const logger = new Logger();
-  const config = new ConfigService();
-
+async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
-
-  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+  app.enableShutdownHooks();
+  app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
   app.useGlobalFilters(new RpcHttpExceptionFilter());
 
-  app.connectMicroservice<MicroserviceOptions>(
-    {
-      transport: Transport.RMQ,
-      options: {
-        urls: [
-          {
-            port: config.get('AMQP_PORT'),
-            hostname: config.get('AMQP_HOSTNAME'),
-            username: config.get('AMQP_USERNAME'),
-            password: config.get('AMQP_PASSWORD'),
-          },
-        ],
-        persistent: true,
-        queue: config.get('AMQP_PRODUCT_SRV_COMMAND_QUEUE'),
-        queueOptions: {
-          durable: true,
-        },
-      },
-    },
-    { inheritAppConfig: true },
-  );
+  try {
+    const env = process.env;
+    const url = requiredEnvironment(env, 'PRODUCT_AMQP_URL');
+    const commandQueue = requiredEnvironment(env, 'PRODUCT_V2_COMMAND_QUEUE');
+    const eventQueue = requiredEnvironment(env, 'PRODUCT_V2_EVENT_QUEUE');
+    if (commandQueue === eventQueue) throw new Error('Command and event queues must be different');
 
-  app.connectMicroservice<MicroserviceOptions>(
-    {
+    app.connectMicroservice<MicroserviceOptions>({
+      transport: Transport.RMQ,
+      options: { urls: [url], queue: commandQueue, queueOptions: { durable: true }, persistent: true },
+    }, { inheritAppConfig: true });
+    app.connectMicroservice<MicroserviceOptions>({
       transport: Transport.RMQ,
       options: {
-        urls: [
-          {
-            port: config.get('AMQP_PORT'),
-            hostname: config.get('AMQP_HOSTNAME'),
-            username: config.get('AMQP_USERNAME'),
-            password: config.get('AMQP_PASSWORD'),
-          },
-        ],
+        urls: [url],
+        queue: eventQueue,
+        queueOptions: { durable: true },
         persistent: true,
-        queue: config.get('AMQP_PRODUCT_SRV_EVENT_QUEUE'),
-        queueOptions: {
-          durable: true,
-        },
-        exchange: config.get('AMQP_EVENTS_EXCHANGE'),
+        exchange: requiredEnvironment(env, 'PRODUCT_EVENTS_EXCHANGE'),
         exchangeType: 'topic',
+        wildcards: true,
       },
-    },
-    { inheritAppConfig: true },
-  );
+    }, { inheritAppConfig: true });
 
-  await app.init();
-  await app.startAllMicroservices();
-
-  logger.log('Service has been started.');
+    await app.init();
+    await app.startAllMicroservices();
+    Logger.log('Product service v2 started', 'Bootstrap');
+  } catch (error) {
+    await app.close();
+    throw error;
+  }
 }
 
-bootstrap();
+void bootstrap().catch((error: unknown) => {
+  // Do not log connection settings or credentials from driver error objects.
+  Logger.error(error instanceof Error ? error.name : 'BootstrapError', 'Product service failed to start');
+  process.exitCode = 1;
+});

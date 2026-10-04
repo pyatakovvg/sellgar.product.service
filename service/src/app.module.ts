@@ -1,33 +1,25 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
-import { ApiV1Module } from '@/api/v1/api.module';
+import { BrandModule } from './catalog/brand/brand.module';
+import { ImageModule } from './catalog/image/image.module';
+import { PropertyModule } from './catalog/property/property.module';
+import { ProductTypeModule } from './catalog/product-type/product-type.module';
+import { ProductModule } from './catalog/product/product.module';
+import { UnitModule } from './catalog/unit/unit.module';
+import { databaseOptions } from './database/database.options';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ envFilePath: './.env', isGlobal: true }),
-
-    TypeOrmModule.forRootAsync({
-      imports: [ConfigModule],
-      useFactory: (configService: ConfigService) => {
-        return {
-          type: 'postgres',
-          host: configService.get('DATABASE_HOST'),
-          port: +configService.get('DATABASE_PORT'),
-          username: configService.get('DATABASE_USERNAME'),
-          password: configService.get('DATABASE_PASSWORD'),
-          database: configService.get('DATABASE_DATABASE_NAME'),
-          autoLoadEntities: true,
-          synchronize: true,
-        };
-      },
-      inject: [ConfigService],
-    }),
-
-    ApiV1Module,
+    ConfigModule.forRoot({ isGlobal: true, envFilePath: '.env' }),
+    TypeOrmModule.forRootAsync({ useFactory: () => databaseOptions(process.env) }),
+    UnitModule,
+    BrandModule,
+    ImageModule,
+    PropertyModule,
+    ProductTypeModule,
+    ProductModule,
   ],
 })
-class AppModule {}
-
-export { AppModule };
+export class AppModule {}
