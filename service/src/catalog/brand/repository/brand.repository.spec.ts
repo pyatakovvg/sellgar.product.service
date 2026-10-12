@@ -1,6 +1,8 @@
 import 'reflect-metadata';
 import { ConflictException, NotFoundException } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, In } from 'typeorm';
+import { ImageModel } from '../../image/infrastructure/persistence/model/image.model';
+import { BrandImageOutboxService } from '../service/brand-image-outbox.service';
 import { BrandImageModel } from '../brand-image.model';
 import { BrandModel } from '../brand.model';
 import { BrandRepository } from './brand.repository';
@@ -13,10 +15,18 @@ describe('Brand updates and explicit image replacement', () => {
     getRepository: jest.fn(() => pageRepository),
     manager,
   };
-  const repository = new BrandRepository(dataSource as unknown as DataSource);
+  const imageOutbox = { removed: jest.fn() };
+  const repository = new BrandRepository(
+    dataSource as unknown as DataSource,
+    imageOutbox as unknown as BrandImageOutboxService,
+  );
   const imageUuid = '1a8e6d33-6000-4000-8000-000000000001';
 
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    manager.find.mockResolvedValue([]);
+    manager.insert.mockResolvedValue(undefined);
+  });
 
   function existingBrand() {
     return {
@@ -43,6 +53,7 @@ describe('Brand updates and explicit image replacement', () => {
     });
     expect(manager.delete).not.toHaveBeenCalled();
     expect(manager.insert).not.toHaveBeenCalled();
+    expect(imageOutbox.removed).not.toHaveBeenCalled();
   });
 
   it('clears a description only when explicitly set to null', async () => {
@@ -55,9 +66,12 @@ describe('Brand updates and explicit image replacement', () => {
 
   it('clears image links only for an explicit empty array', async () => {
     manager.findOne.mockResolvedValue(existingBrand());
+    manager.find.mockResolvedValue([{ imageUuid }]);
     await repository.update('brand', 2, undefined, undefined, []);
     expect(manager.delete).toHaveBeenCalledWith(BrandImageModel, { brandCode: 'brand' });
     expect(manager.insert).not.toHaveBeenCalled();
+    expect(manager.delete).toHaveBeenCalledWith(ImageModel, { uuid: In([imageUuid]) });
+    expect(imageOutbox.removed).toHaveBeenCalledWith(manager, 'brand', 3, [imageUuid]);
   });
 
   it('rejects missing image references before deleting existing links', async () => {
@@ -67,6 +81,7 @@ describe('Brand updates and explicit image replacement', () => {
       NotFoundException,
     );
     expect(manager.delete).not.toHaveBeenCalled();
+    expect(imageOutbox.removed).not.toHaveBeenCalled();
   });
 
   it('does not write or replace images when the version is stale', async () => {
@@ -74,6 +89,52 @@ describe('Brand updates and explicit image replacement', () => {
     await expect(repository.update('brand', 1, undefined, undefined, [])).rejects.toThrow(ConflictException);
     expect(manager.save).not.toHaveBeenCalled();
     expect(manager.delete).not.toHaveBeenCalled();
+    expect(imageOutbox.removed).not.toHaveBeenCalled();
+  });
+
+  it('replaces the link before scheduling deletion of the old image in the same transaction', async () => {
+    const replacementUuid = '1a8e6d33-6000-4000-8000-000000000002';
+    manager.findOne.mockResolvedValue(existingBrand());
+    manager.find.mockImplementation(async (model: unknown) =>
+      model === ImageModel ? [{ uuid: replacementUuid }] : [{ imageUuid }],
+    );
+
+    await repository.update('brand', 2, undefined, undefined, [{ imageUuid: replacementUuid }]);
+
+    expect(manager.insert).toHaveBeenCalledWith(BrandImageModel, [
+      { brandCode: 'brand', imageUuid: replacementUuid, sortOrder: 0 },
+    ]);
+    expect(manager.delete).toHaveBeenCalledWith(ImageModel, { uuid: In([imageUuid]) });
+    expect(imageOutbox.removed).toHaveBeenCalledWith(manager, 'brand', 3, [imageUuid]);
+    expect(manager.insert.mock.invocationCallOrder[0]).toBeLessThan(imageOutbox.removed.mock.invocationCallOrder[0]);
+  });
+
+  it('does not delete an image retained by the brand', async () => {
+    manager.findOne.mockResolvedValue(existingBrand());
+    manager.find.mockImplementation(async (model: unknown) =>
+      model === ImageModel ? [{ uuid: imageUuid }] : [{ imageUuid }],
+    );
+
+    await repository.update('brand', 2, undefined, undefined, [{ imageUuid: imageUuid.toUpperCase() }]);
+
+    expect(manager.delete).toHaveBeenCalledTimes(1);
+    expect(imageOutbox.removed).not.toHaveBeenCalled();
+  });
+
+  it('does not schedule deletion when saving the new link fails', async () => {
+    const failure = new Error('Cannot save image link');
+    manager.findOne.mockResolvedValue(existingBrand());
+    manager.find.mockImplementation(async (model: unknown) =>
+      model === ImageModel ? [{ uuid: 'new-image' }] : [{ imageUuid }],
+    );
+    manager.insert.mockRejectedValueOnce(failure);
+
+    await expect(repository.update('brand', 2, undefined, undefined, [{ imageUuid: 'new-image' }])).rejects.toBe(
+      failure,
+    );
+
+    expect(manager.delete).toHaveBeenCalledTimes(1);
+    expect(imageOutbox.removed).not.toHaveBeenCalled();
   });
 
   it('allows a version-checked no-op without incrementing the version', async () => {

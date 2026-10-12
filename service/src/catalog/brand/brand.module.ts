@@ -7,11 +7,12 @@ import { BrandImageModel } from './brand-image.model';
 import { BrandModel } from './brand.model';
 import { BrandRepository } from './repository/brand.repository';
 import { BrandService } from './service/brand.service';
+import { BrandImageOutboxService } from './service/brand-image-outbox.service';
 
 @Module({
   imports: [TypeOrmModule.forFeature([BrandModel, BrandImageModel, ImageModel])],
   controllers: [BrandController],
-  providers: [BrandCommandMapper, BrandRepository, BrandService],
+  providers: [BrandCommandMapper, BrandRepository, BrandService, BrandImageOutboxService],
   exports: [BrandRepository, BrandService, TypeOrmModule],
 })
 export class BrandModule {}

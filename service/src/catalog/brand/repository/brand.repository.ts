@@ -5,10 +5,14 @@ import { ImageModel } from '../../image/infrastructure/persistence/model/image.m
 import { BrandImageModel } from '../brand-image.model';
 import { BrandModel } from '../brand.model';
 import { BrandImageCommand } from '../service/command/brand-image.command';
+import { BrandImageOutboxService } from '../service/brand-image-outbox.service';
 
 @Injectable()
 export class BrandRepository {
-  constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
+  constructor(
+    @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly imageOutbox: BrandImageOutboxService,
+  ) {}
 
   async getAll(limit: number, offset: number) {
     const [items, total] = await this.dataSource.getRepository(BrandModel).findAndCount({
@@ -41,7 +45,7 @@ export class BrandRepository {
     try {
       return await this.dataSource.transaction(async (manager) => {
         await manager.insert(BrandModel, { code, name, description: description ?? null, version: 1 });
-        if (images !== undefined) await this.replaceImages(manager, code, images);
+        if (images !== undefined) await this.replaceImages(manager, code, 1, images);
         return this.readBrand(manager, code);
       });
     } catch (error) {
@@ -67,7 +71,7 @@ export class BrandRepository {
       brand.description = nextDescription;
       brand.version += 1;
       await manager.save(BrandModel, brand);
-      if (images !== undefined) await this.replaceImages(manager, code, images);
+      if (images !== undefined) await this.replaceImages(manager, code, brand.version, images);
       return this.readBrand(manager, code);
     });
   }
@@ -82,14 +86,18 @@ export class BrandRepository {
     return brand;
   }
 
-  private async replaceImages(manager: EntityManager, brandCode: string, images: BrandImageCommand[]) {
+  private async replaceImages(manager: EntityManager, brandCode: string, version: number, images: BrandImageCommand[]) {
     if (images.length > 0) {
-      const identifiers = images.map((image) => image.imageUuid);
+      const identifiers = images.map((image) => image.imageUuid.toLowerCase());
       const knownImages = await manager.find(ImageModel, { where: { uuid: In(identifiers) } });
       const found = new Set(knownImages.map((image) => image.uuid));
       if (identifiers.some((uuid) => !found.has(uuid)))
         throw new NotFoundException('Some selected brand images do not exist');
     }
+
+    const previousImages = await manager.find(BrandImageModel, { where: { brandCode } });
+    const selected = new Set(images.map((image) => image.imageUuid.toLowerCase()));
+    const removed = previousImages.filter((image) => !selected.has(image.imageUuid)).map((image) => image.imageUuid);
 
     await manager.delete(BrandImageModel, { brandCode });
     if (images.length > 0) {
@@ -101,6 +109,10 @@ export class BrandRepository {
           sortOrder: image.sortOrder ?? index,
         })),
       );
+    }
+    if (removed.length > 0) {
+      await manager.delete(ImageModel, { uuid: In(removed) });
+      await this.imageOutbox.removed(manager, brandCode, version, removed);
     }
   }
 }
