@@ -18,7 +18,10 @@ describe('Unit versioned updates', () => {
 
     const result = await repository.update('cm', 3, 'Сантиметр');
     expect(result).toMatchObject({ code: 'cm', name: 'Сантиметр', symbol: 'см', version: 4 });
-    expect(manager.findOne).toHaveBeenCalledWith(UnitModel, expect.objectContaining({ lock: { mode: 'pessimistic_write' } }));
+    expect(manager.findOne).toHaveBeenCalledWith(
+      UnitModel,
+      expect.objectContaining({ lock: { mode: 'pessimistic_write' } }),
+    );
   });
 
   it('rejects a stale version before writing', async () => {
@@ -40,7 +43,53 @@ describe('Unit versioned updates', () => {
   });
 
   it('turns a duplicate manual code into a conflict', async () => {
-    manager.insert.mockRejectedValue(new QueryFailedError('INSERT', [], Object.assign(new Error('duplicate'), { code: '23505' })));
+    manager.insert.mockRejectedValue(
+      new QueryFailedError('INSERT', [], Object.assign(new Error('duplicate'), { code: '23505' })),
+    );
     await expect(repository.create('cm', 'Length', 'cm')).rejects.toThrow(ConflictException);
+  });
+  it('creates a unit with a multiline description', async () => {
+    manager.insert.mockResolvedValue({});
+    manager.findOneByOrFail.mockResolvedValue({ code: 'cm' });
+    await repository.create('cm', 'Сантиметр', 'см', 'Длина\nОдна сотая метра');
+    expect(manager.insert).toHaveBeenCalledWith(UnitModel, {
+      code: 'cm',
+      name: 'Сантиметр',
+      symbol: 'см',
+      description: 'Длина\nОдна сотая метра',
+      version: 1,
+    });
+  });
+
+  it('preserves an omitted description when changing another field', async () => {
+    manager.findOne.mockResolvedValue({
+      code: 'cm',
+      name: 'Length',
+      symbol: 'cm',
+      description: 'Keep this',
+      version: 4,
+    });
+    manager.save.mockImplementation(async (_model: unknown, value: unknown) => value);
+    const result = await repository.update('cm', 4, 'Сантиметр');
+    expect(result.description).toBe('Keep this');
+    expect(result.version).toBe(5);
+  });
+
+  it.each(['Описание\nВторая строка', '', null])(
+    'updates or clears a description explicitly: %j',
+    async (description) => {
+      manager.findOne.mockResolvedValue({ code: 'cm', name: 'Length', symbol: 'cm', description: 'Old', version: 4 });
+      manager.save.mockImplementation(async (_model: unknown, value: unknown) => value);
+      const result = await repository.update('cm', 4, undefined, undefined, description);
+      expect(result).toMatchObject({ description, version: 5, name: 'Length', symbol: 'cm' });
+      expect(manager.save).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('does not increment the version for an identical description', async () => {
+    manager.findOne.mockResolvedValue({ code: 'cm', name: 'Length', symbol: 'cm', description: 'Same', version: 4 });
+    const result = await repository.update('cm', 4, undefined, undefined, 'Same');
+    expect(result.version).toBe(4);
+    expect(manager.save).not.toHaveBeenCalled();
   });
 });

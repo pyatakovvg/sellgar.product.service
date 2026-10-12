@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { IsInt, IsString, Max, MaxLength, Min, MinLength, ValidateIf } from 'class-validator';
+import { IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength, ValidateIf } from 'class-validator';
 
 import { trimString } from '../../../../common/transformer/trim-string.transformer';
 import { UnitCodeDto } from './unit-code.dto';
@@ -23,4 +23,7 @@ export class UpdateUnitDto extends UnitCodeDto {
   @MinLength(1)
   @MaxLength(256)
   symbol?: string;
+  @IsOptional()
+  @IsString()
+  description?: string | null;
 }

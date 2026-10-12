@@ -12,6 +12,9 @@ export class UnitModel {
   @Column({ type: 'varchar', length: 256 })
   symbol: string;
 
+  @Column({ type: 'text', nullable: true })
+  description: string | null;
+
   @Column({ type: 'integer', default: 1 })
   version: number;
 

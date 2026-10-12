@@ -11,16 +11,22 @@ export class UnitController {
   constructor(private readonly service: UnitService) {}
 
   @MessagePattern({ cmd: 'catalog.v2.unit.getAll' })
-  getAll(@Payload() dto: GetAllUnitsDto) { return this.service.getAll(dto.limit, dto.offset); }
+  getAll(@Payload() dto: GetAllUnitsDto) {
+    return this.service.getAll(dto.limit, dto.offset);
+  }
 
   @MessagePattern({ cmd: 'catalog.v2.unit.getByCode' })
-  getByCode(@Payload() dto: UnitCodeDto) { return this.service.getByCode(dto.code); }
+  getByCode(@Payload() dto: UnitCodeDto) {
+    return this.service.getByCode(dto.code);
+  }
 
   @MessagePattern({ cmd: 'catalog.v2.unit.create' })
-  create(@Payload() dto: CreateUnitDto) { return this.service.create(dto.code, dto.name, dto.symbol); }
+  create(@Payload() dto: CreateUnitDto) {
+    return this.service.create(dto.code, dto.name, dto.symbol, dto.description);
+  }
 
   @MessagePattern({ cmd: 'catalog.v2.unit.update' })
   update(@Payload() dto: UpdateUnitDto) {
-    return this.service.update(dto.code, dto.version, dto.name, dto.symbol);
+    return this.service.update(dto.code, dto.version, dto.name, dto.symbol, dto.description);
   }
 }

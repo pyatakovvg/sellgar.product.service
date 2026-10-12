@@ -26,9 +26,33 @@ describe('Unit DTO', () => {
   });
 
   it('applies bounded pagination defaults', async () => {
-    await expect(pipe.transform({}, { type: 'body', metatype: GetAllUnitsDto }))
-      .resolves.toEqual({ limit: 50, offset: 0 });
-    await expect(pipe.transform({ limit: 101 }, { type: 'body', metatype: GetAllUnitsDto }))
-      .rejects.toBeInstanceOf(BadRequestException);
+    await expect(pipe.transform({}, { type: 'body', metatype: GetAllUnitsDto })).resolves.toEqual({
+      limit: 50,
+      offset: 0,
+    });
+    await expect(pipe.transform({ limit: 101 }, { type: 'body', metatype: GetAllUnitsDto })).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+  });
+  it.each([undefined, null, '', 'Описание\nВторая строка'])(
+    'accepts an optional multiline description: %j',
+    async (description) => {
+      for (const [metatype, payload] of [
+        [CreateUnitDto, { code: 'cm', name: 'Сантиметр', symbol: 'см', description }],
+        [UpdateUnitDto, { code: 'cm', version: 1, description }],
+      ] as const) {
+        const result = await pipe.transform(payload, { type: 'body', metatype });
+        expect(result.description).toBe(description);
+      }
+    },
+  );
+
+  it('rejects a non-string description', async () => {
+    for (const [metatype, payload] of [
+      [CreateUnitDto, { code: 'cm', name: 'Сантиметр', symbol: 'см', description: 123 }],
+      [UpdateUnitDto, { code: 'cm', version: 1, description: 123 }],
+    ] as const) {
+      await expect(pipe.transform(payload, { type: 'body', metatype })).rejects.toBeInstanceOf(BadRequestException);
+    }
   });
 });

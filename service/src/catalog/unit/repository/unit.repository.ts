@@ -9,7 +9,9 @@ export class UnitRepository {
 
   async getAll(limit: number, offset: number) {
     const [items, total] = await this.dataSource.getRepository(UnitModel).findAndCount({
-      order: { code: 'ASC' }, take: limit, skip: offset,
+      order: { code: 'ASC' },
+      take: limit,
+      skip: offset,
     });
     return { items, total, limit, offset };
   }
@@ -20,10 +22,10 @@ export class UnitRepository {
     return unit;
   }
 
-  async create(code: string, name: string, symbol: string) {
+  async create(code: string, name: string, symbol: string, description?: string | null) {
     try {
       return await this.dataSource.transaction(async (manager) => {
-        await manager.insert(UnitModel, { code, name, symbol, version: 1 });
+        await manager.insert(UnitModel, { code, name, symbol, description: description ?? null, version: 1 });
         return manager.findOneByOrFail(UnitModel, { code });
       });
     } catch (error) {
@@ -34,7 +36,7 @@ export class UnitRepository {
     }
   }
 
-  update(code: string, version: number, name?: string, symbol?: string) {
+  update(code: string, version: number, name?: string, symbol?: string, description?: string | null) {
     return this.dataSource.transaction(async (manager) => {
       const unit = await manager.findOne(UnitModel, { where: { code }, lock: { mode: 'pessimistic_write' } });
       if (!unit) throw new NotFoundException(`Unit ${code} not found`);
@@ -42,10 +44,12 @@ export class UnitRepository {
 
       const nextName = name ?? unit.name;
       const nextSymbol = symbol ?? unit.symbol;
-      if (nextName === unit.name && nextSymbol === unit.symbol) return unit;
+      const nextDescription = description === undefined ? unit.description : description;
+      if (nextName === unit.name && nextSymbol === unit.symbol && nextDescription === unit.description) return unit;
 
       unit.name = nextName;
       unit.symbol = nextSymbol;
+      unit.description = nextDescription;
       unit.version += 1;
       return manager.save(UnitModel, unit);
     });

@@ -16,6 +16,8 @@
 - Property, PropertyOption, Unit и Brand идентифицируются ручными кодами.
   ProductType, Product и Variant используют UUID; Image сохраняет UUID внешнего
   файла. Не добавлять Product/Variant дополнительный `code`.
+- Unit хранит необязательное `description` в PostgreSQL `text`. При PATCH omission
+  сохраняет описание, `null` или пустая строка очищает; изменение учитывает версию.
 - Product/Variant никогда не удаляются: active/archived, редактирование архива
   разрешено; состояние родителя не переписывает личные состояния вариантов.
 - Изображения товара связаны с Variant; Image — проекция файла, не байты/URL.
