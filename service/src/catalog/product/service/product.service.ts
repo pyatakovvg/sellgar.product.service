@@ -31,9 +31,10 @@ export class ProductService {
     status?: ProductStatus,
     typeUuid?: string,
     filters: ProductPropertyFilterCommand[] = [],
+    term?: string,
   ): Promise<ProductPageEntity> {
     const normalizedFilters = await this.filterService.normalize(filters);
-    const page = await this.repository.getAll(limit, offset, status, typeUuid, normalizedFilters);
+    const page = await this.repository.getAll(limit, offset, status, typeUuid, normalizedFilters, term);
     return { ...page, items: page.items.map(ProductEntity.fromModel) };
   }
 
