@@ -22,6 +22,7 @@ import { VariantModel } from './variant.model';
 @Index('product_uuid_type_unique', ['uuid', 'typeUuid'], { unique: true })
 @Index('product_type_idx', ['typeUuid'])
 @Index('product_brand_idx', ['brandCode'])
+@Index('product_search_vector_idx', { synchronize: false })
 export class ProductModel {
   @PrimaryColumn({ type: 'uuid' })
   uuid: string;
@@ -34,6 +35,9 @@ export class ProductModel {
 
   @Column({ type: 'text', nullable: true })
   description: string | null;
+
+  @Column({ name: 'search_vector', type: 'tsvector', select: false, insert: false, update: false })
+  searchVector: string;
 
   @Column({ name: 'brand_code', type: 'varchar', length: 256 })
   brandCode: string;

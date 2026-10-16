@@ -43,13 +43,16 @@ export class ProductRepository {
   ): Promise<{ items: ProductModel[]; total: number; limit: number; offset: number }> {
     const query = this.dataSource.getRepository(ProductModel).createQueryBuilder('product');
     if (term) {
-      const escaped = term.replace(/[\\%_]/g, '\\$&');
-      query.andWhere('product.name ILIKE :term', { term: `%${escaped}%` });
+      query.andWhere('product.search_vector @@ product_search_query(:term)', { term });
+      query.addSelect('ts_rank_cd(product.search_vector, product_search_query(:term), 32)', 'search_rank');
+      query.orderBy('search_rank', 'DESC').addOrderBy('product.uuid', 'ASC');
+    } else {
+      query.orderBy('product.uuid', 'ASC');
     }
     if (status !== undefined) query.andWhere('product.status = :status', { status });
     if (typeUuid !== undefined) query.andWhere('product.type_uuid = :typeUuid', { typeUuid });
     filters.forEach((filter, index) => this.applyFilter(query, filter, index));
-    const [headers, total] = await query.orderBy('product.uuid', 'ASC').take(limit).skip(offset).getManyAndCount();
+    const [headers, total] = await query.take(limit).skip(offset).getManyAndCount();
     if (headers.length === 0) return { items: [], total, limit, offset };
     const loaded = await this.dataSource.getRepository(ProductModel).find({
       where: { uuid: In(headers.map((product) => product.uuid)) },
