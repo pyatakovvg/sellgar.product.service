@@ -21,12 +21,12 @@ export class ImageController {
     private readonly queryMapper: ImageQueryMapper,
   ) {}
 
-  @EventPattern('file_srv.file.create')
+  @EventPattern<string>('file_srv.file.create')
   create(@Payload() payload: unknown, @Ctx() context: RmqContext): Promise<void> {
     return this.consume(context, () => this.eventConsumer.created(payload));
   }
 
-  @EventPattern('file_srv.file.update')
+  @EventPattern<string>('file_srv.file.update')
   update(@Payload() payload: unknown, @Ctx() context: RmqContext): Promise<void> {
     return this.consume(context, () => this.eventConsumer.updated(payload));
   }
