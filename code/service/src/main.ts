@@ -3,6 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import { MicroserviceOptions, Transport } from '@nestjs/microservices';
 
 import { AppModule } from './app.module';
+import { HealthService } from './health/health.service';
 import { RpcHttpExceptionFilter } from './common/rpc-http-exception.filter';
 import { requiredEnvironment } from './database/database.options';
 
@@ -19,26 +20,46 @@ async function bootstrap(): Promise<void> {
     const eventQueue = requiredEnvironment(env, 'PRODUCT_V2_EVENT_QUEUE');
     if (commandQueue === eventQueue) throw new Error('Command and event queues must be different');
 
-    app.connectMicroservice<MicroserviceOptions>({
-      transport: Transport.RMQ,
-      options: { urls: [url], queue: commandQueue, queueOptions: { durable: true }, persistent: true },
-    }, { inheritAppConfig: true });
-    app.connectMicroservice<MicroserviceOptions>({
-      transport: Transport.RMQ,
-      options: {
-        urls: [url],
-        queue: eventQueue,
-        queueOptions: { durable: true },
-        persistent: true,
-        exchange: requiredEnvironment(env, 'PRODUCT_EVENTS_EXCHANGE'),
-        exchangeType: 'topic',
-        wildcards: true,
-        noAck: false,
+    const commands = app.connectMicroservice<MicroserviceOptions>(
+      {
+        transport: Transport.RMQ,
+        options: { urls: [url], queue: commandQueue, queueOptions: { durable: true }, persistent: true },
       },
-    }, { inheritAppConfig: true });
+      { inheritAppConfig: true },
+    );
+    const events = app.connectMicroservice<MicroserviceOptions>(
+      {
+        transport: Transport.RMQ,
+        options: {
+          urls: [url],
+          queue: eventQueue,
+          queueOptions: { durable: true },
+          persistent: true,
+          exchange: requiredEnvironment(env, 'PRODUCT_EVENTS_EXCHANGE'),
+          exchangeType: 'topic',
+          wildcards: true,
+          noAck: false,
+        },
+      },
+      { inheritAppConfig: true },
+    );
+
+    const health = app.get(HealthService);
+    commands.status.subscribe((status) => {
+      health.setConsumerConnected('commands', status === 'connected' || status === 'unblocked');
+    });
+    events.status.subscribe((status) => {
+      health.setConsumerConnected('events', status === 'connected' || status === 'unblocked');
+    });
+
+    const port = Number(env.PORT ?? '8080');
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      throw new Error('PORT must be a valid TCP port');
+    }
 
     await app.init();
     await app.startAllMicroservices();
+    await app.listen(port);
     Logger.log('Product service v2 started', 'Bootstrap');
   } catch (error) {
     await app.close();

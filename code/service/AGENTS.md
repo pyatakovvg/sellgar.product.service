@@ -4,7 +4,7 @@
 в `../_service` как reference и не является источником целевых бизнес-правил.
 
 Источник принятых решений: workspace `agent/docs/rfc-product-constructor.md`.
-Область реализации и проверки: `../REWRITE-CONTRACT.md`.
+Область реализации и проверки: `../../REWRITE-CONTRACT.md`.
 
 - Следовать ООП и соглашениям NestJS старого сервиса: DTO-классы,
   `class-validator`/`class-transformer`, injectable services и регистрация через
@@ -60,5 +60,8 @@
   Тест создает отдельную схему в транзакции и откатывает ее вместе с данными.
   Обычный unit-run этот тест пропускает, не подключаясь к БД.
 
-Проверки из корня репозитория: `yarn build:product_srv`.
-Из `service`: `yarn test --runInBand`.
+Проверки из `code/`: `yarn build:product_srv`.
+Из `code/service`: `yarn test --runInBand`.
+
+Внутренний `GET /health` на `PORT` (default 8080) отражает PostgreSQL и оба
+RMQ consumer. Доменные команды и event-контракты при деплое не изменяются.

@@ -1,0 +1,79 @@
+image:
+  repository: ghcr.io/pyatakovvg/sellgar.product.service
+imagePullSecrets:
+- name: ghcr-pull
+applicationPort: 8080
+env:
+  AMQP_USERNAME:
+    valueFrom:
+      secretKeyRef:
+        name: rabbitmq-default-user
+        key: username
+  AMQP_PASSWORD:
+    valueFrom:
+      secretKeyRef:
+        name: rabbitmq-default-user
+        key: password
+  PRODUCT_DATABASE_USERNAME:
+    valueFrom:
+      secretKeyRef:
+        name: product-database
+        key: username
+  PRODUCT_DATABASE_PASSWORD:
+    valueFrom:
+      secretKeyRef:
+        name: product-database
+        key: password
+  PRODUCT_AMQP_URL: amqp://$(AMQP_USERNAME):$(AMQP_PASSWORD)@rabbitmq:5672
+podSecurityContext:
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+volumeMounts:
+- name: environment
+  mountPath: /app/.env
+  subPath: .env
+  readOnly: true
+- name: temporary-files
+  mountPath: /tmp
+volumes:
+- name: environment
+  configMap:
+    name: product-service-env
+- name: temporary-files
+  emptyDir:
+    sizeLimit: 32Mi
+probes:
+  startup:
+    httpGet:
+      path: /health
+      port: http
+    periodSeconds: 2
+    failureThreshold: 90
+  readiness:
+    httpGet:
+      path: /health
+      port: http
+    periodSeconds: 5
+  liveness:
+    tcpSocket:
+      port: http
+    periodSeconds: 10
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+ingress:
+  enabled: false
+migration:
+  enabled: true
+  command:
+  - node
+  args:
+  - --env-file=.env
+  - node_modules/typeorm/cli.js
+  - -d
+  - service/dist/database/data-source.js
+  - migration:run

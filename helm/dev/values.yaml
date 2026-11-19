@@ -1,0 +1,13 @@
+replicas: 1
+configmaps:
+- nameOverride: product-service-env
+  enabled: true
+  filename: .env
+  data: |
+    PORT=8080
+    PRODUCT_DATABASE_HOST=postgresql-rw
+    PRODUCT_DATABASE_PORT=5432
+    PRODUCT_DATABASE_NAME=product_srv_v2
+    PRODUCT_V2_COMMAND_QUEUE=product.v2.commands
+    PRODUCT_V2_EVENT_QUEUE=product.v2.events
+    PRODUCT_EVENTS_EXCHANGE=event.exchange

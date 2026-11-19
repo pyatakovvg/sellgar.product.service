@@ -88,3 +88,9 @@ TypeORM smoke прошёл создание и изменение типа, ат
 `file_srv.file.create`. Bootstrap подтвердил подключение к `product_srv_v2`,
 инициализацию `ProductOutboxModule`, `OutboxModule`, `InboxModule` и подключение
 к двум RabbitMQ-очередям.
+
+## Структура после подготовки деплоя (2026-11-20)
+
+Yarn root, `service`, `_service` и `library` находятся внутри `code/`.
+Исторический scope переписывания выше сохраняется; рабочая ветка — `development`.
+Актуальные команды и deployment contract описаны в `AGENTS.md`.

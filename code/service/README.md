@@ -13,7 +13,7 @@
 catalog/<aggregate>/
   controller/
     dto/          один входной контракт на файл
-  service/
+  code/service/
     command/      валидируемые команды приложения
   repository/     TypeORM и транзакции
   entity/         выходные модели API
@@ -49,7 +49,7 @@ optimistic version check.
 
 ## Конфигурация
 
-Рабочий локальный файл `service/.env` создан для базы `product_srv_v2` и
+Рабочий локальный файл `code/service/.env` создан для базы `product_srv_v2` и
 игнорируется Git. Образец без секретов находится в `.env.example`.
 
 ```sh
@@ -69,7 +69,7 @@ PRODUCT_EVENTS_EXCHANGE=event.exchange
 
 ## Запуск и проверка
 
-Из `service`:
+Из `code/service`:
 
 ```sh
 yarn migration:show
@@ -78,7 +78,7 @@ yarn test --runInBand
 yarn start:dev
 ```
 
-Из корня репозитория:
+Из `code/`:
 
 ```sh
 yarn build:product_srv
