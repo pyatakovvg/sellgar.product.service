@@ -1,7 +1,7 @@
 # Product service v2
 
 Новый NestJS/TypeORM сервис управления каталогом по
-[RFC конструктора](../../../../agent/docs/rfc-product-constructor.md). Старая
+[RFC конструктора](../../../../../agent/docs/rfc-product-constructor.md). Старая
 реализация сохранена целиком в `../_service` и используется только как источник
 совместимой инфраструктурной механики.
 
@@ -13,7 +13,7 @@
 catalog/<aggregate>/
   controller/
     dto/          один входной контракт на файл
-  code/service/
+  service/
     command/      валидируемые команды приложения
   repository/     TypeORM и транзакции
   entity/         выходные модели API
