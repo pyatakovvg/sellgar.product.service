@@ -7,6 +7,7 @@ import { ChangeVariantStatusDto } from './dto/change-variant-status.dto';
 import { CreateProductDto } from './dto/create-product.dto';
 import { CreateVariantDto } from './dto/create-variant.dto';
 import { GetAllProductsDto } from './dto/get-all-products.dto';
+import { VariantUuidDto } from './dto/variant-uuid.dto';
 import { ProductUuidDto } from './dto/product-uuid.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { UpdateVariantDto } from './dto/update-variant.dto';
@@ -28,6 +29,16 @@ export class ProductController {
   @MessagePattern({ cmd: 'catalog.v2.product.getByUuid' })
   getByUuid(@Payload() dto: ProductUuidDto) {
     return this.service.getByUuid(dto.uuid);
+  }
+
+  @MessagePattern({ cmd: 'catalog.v2.product.variant.getAll' })
+  getVariants(@Payload() dto: ProductUuidDto) {
+    return this.service.getVariants(dto.uuid);
+  }
+
+  @MessagePattern({ cmd: 'catalog.v2.product.variant.getByUuid' })
+  getVariant(@Payload() dto: VariantUuidDto) {
+    return this.service.getVariant(dto.uuid, dto.variantUuid);
   }
 
   @MessagePattern({ cmd: 'catalog.v2.product.create' })

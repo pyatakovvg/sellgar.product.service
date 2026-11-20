@@ -1,6 +1,5 @@
 import { Type } from 'class-transformer';
 import {
-  ArrayMinSize,
   ArrayUnique,
   IsArray,
   IsInt,
@@ -47,7 +46,6 @@ export class CreateProductCommand {
   readonly properties: PropertyAssignmentCommand[];
 
   @IsArray()
-  @ArrayMinSize(1)
   @ValidateNested({ each: true })
   @Type(() => VariantInputCommand)
   readonly variants: VariantInputCommand[];

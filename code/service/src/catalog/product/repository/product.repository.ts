@@ -54,17 +54,10 @@ export class ProductRepository {
     filters.forEach((filter, index) => this.applyFilter(query, filter, index));
     const [headers, total] = await query.take(limit).skip(offset).getManyAndCount();
     if (headers.length === 0) return { items: [], total, limit, offset };
-    const loaded = await this.dataSource.getRepository(ProductModel).find({
-      where: { uuid: In(headers.map((product) => product.uuid)) },
-      relations: this.snapshots.relations,
-      order: this.snapshots.order,
-    });
-    const byUuid = new Map(loaded.map((product) => [product.uuid, product]));
-    const items = headers.map((product) => {
-      const loadedProduct = byUuid.get(product.uuid);
-      if (loadedProduct === undefined) throw new NotFoundException(`Product ${product.uuid} could not be loaded`);
-      return loadedProduct;
-    });
+    const items = await this.snapshots.getMany(
+      this.dataSource.manager,
+      headers.map((product) => product.uuid),
+    );
     return { items, total, limit, offset };
   }
 
@@ -123,6 +116,37 @@ export class ProductRepository {
 
   getByUuid(uuid: string): Promise<ProductModel> {
     return this.read(this.dataSource.manager, uuid);
+  }
+
+  async getVariants(productUuid: string, variantUuid?: string) {
+    return this.dataSource.manager.transaction('REPEATABLE READ', async (manager) => {
+      const product = await manager.findOne(ProductModel, {
+        where: { uuid: productUuid },
+        relations: { productType: { variantFields: { property: { options: { extras: true } } } } },
+        relationLoadStrategy: 'query',
+      });
+      if (!product) throw new NotFoundException(`Product ${productUuid} not found`);
+      const variants = await manager.find(VariantModel, {
+        where: { productUuid, ...(variantUuid ? { uuid: variantUuid } : {}) },
+        relations: { properties: { values: true }, images: { image: true } },
+        relationLoadStrategy: 'query',
+        order: { uuid: 'ASC' },
+      });
+      if (variantUuid && variants.length === 0) {
+        throw new NotFoundException(`Variant ${variantUuid} of product ${productUuid} not found`);
+      }
+      product.productType.variantFields.sort(
+        (left, right) => left.sortOrder - right.sortOrder || left.propertyCode.localeCompare(right.propertyCode),
+      );
+      for (const variant of variants) {
+        for (const property of variant.properties)
+          property.values.sort((left, right) => left.position - right.position);
+        variant.images.sort(
+          (left, right) => left.sortOrder - right.sortOrder || left.imageUuid.localeCompare(right.imageUuid),
+        );
+      }
+      return { product, variants };
+    });
   }
 
   async create(command: CreateProductCommand): Promise<ProductModel> {

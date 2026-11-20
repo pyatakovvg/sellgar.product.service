@@ -2,6 +2,9 @@ import { BadRequestException, ConflictException, Injectable } from '@nestjs/comm
 import { plainToInstance } from 'class-transformer';
 
 import { ProductTypeRepository } from '../../product-type/repository/product-type.repository';
+import { VariantEntity } from '../entity/variant.entity';
+import { VariantListEntity } from '../entity/variant-list.entity';
+import { VariantDetailEntity } from '../entity/variant-detail.entity';
 import { ProductEntity } from '../entity/product.entity';
 import { ProductPageEntity } from '../entity/product-page.entity';
 import { ProductStatus } from '../product-status.enum';
@@ -42,8 +45,29 @@ export class ProductService {
     return ProductEntity.fromModel(await this.repository.getByUuid(uuid));
   }
 
+  async getVariants(productUuid: string): Promise<VariantListEntity> {
+    const { product, variants } = await this.repository.getVariants(productUuid);
+    return {
+      productUuid: product.uuid,
+      version: product.version,
+      typeUuid: product.typeUuid,
+      typeVersion: product.productType.version,
+      items: variants.map((variant) => VariantEntity.fromModel(variant, product.productType.variantFields)),
+    };
+  }
+
+  async getVariant(productUuid: string, variantUuid: string): Promise<VariantDetailEntity> {
+    const { product, variants } = await this.repository.getVariants(productUuid, variantUuid);
+    return {
+      productUuid: product.uuid,
+      version: product.version,
+      typeUuid: product.typeUuid,
+      typeVersion: product.productType.version,
+      ...VariantEntity.fromModel(variants[0], product.productType.variantFields),
+    };
+  }
+
   async create(command: CreateProductCommand): Promise<ProductEntity> {
-    if (command.variants.length === 0) throw new BadRequestException('Product requires at least one variant');
     const productType = await this.productTypeRepository.getByUuid(command.typeUuid);
     this.assertTypeVersion(productType.version, command.typeVersion);
     const productProperties = this.assignmentService.forCreate(

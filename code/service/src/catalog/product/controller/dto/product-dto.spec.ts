@@ -27,7 +27,7 @@ describe('Product transport DTO', () => {
     });
   });
 
-  it('rejects a product without variants', async () => {
+  it('accepts a product before its variants are created', async () => {
     await expect(
       pipe.transform(
         {
@@ -39,7 +39,7 @@ describe('Product transport DTO', () => {
         },
         { type: 'body', metatype: CreateProductDto },
       ),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    ).resolves.toMatchObject({ variants: [] });
   });
 
   it('rejects duplicate property codes at the transport boundary', async () => {

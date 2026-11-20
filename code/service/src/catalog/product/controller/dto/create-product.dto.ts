@@ -1,6 +1,5 @@
 import { Transform, Type } from 'class-transformer';
 import {
-  ArrayMinSize,
   ArrayUnique,
   IsArray,
   IsInt,
@@ -51,7 +50,6 @@ export class CreateProductDto {
   properties?: PropertyAssignmentDto[];
 
   @IsArray()
-  @ArrayMinSize(1)
   @ValidateNested({ each: true })
   @Type(() => VariantInputDto)
   variants: VariantInputDto[];
