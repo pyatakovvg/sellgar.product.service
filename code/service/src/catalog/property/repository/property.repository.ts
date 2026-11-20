@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
-import { DataSource, EntityManager, QueryFailedError } from 'typeorm';
+import { DataSource, EntityManager, In, QueryFailedError } from 'typeorm';
 
 import { PropertyKind } from '../property-kind.enum';
 import { PropertyOptionExtraModel } from '../property-option-extra.model';
@@ -24,14 +24,22 @@ export class PropertyRepository {
     limit: number,
     offset: number,
   ): Promise<{ items: PropertyModel[]; total: number; limit: number; offset: number }> {
-    const [items, total] = await this.dataSource.getRepository(PropertyModel).findAndCount({
+    const repository = this.dataSource.getRepository(PropertyModel);
+    const [page, total] = await repository.findAndCount({
+      order: { code: 'ASC' },
+      take: limit,
+      skip: offset,
+    });
+
+    if (page.length === 0) return { items: [], total, limit, offset };
+
+    const items = await repository.find({
+      where: { code: In(page.map((property) => property.code)) },
       relations: { options: { extras: true } },
       order: {
         code: 'ASC',
         options: { sortOrder: 'ASC', code: 'ASC', extras: { sortOrder: 'ASC', type: 'ASC' } },
       },
-      take: limit,
-      skip: offset,
     });
     return { items, total, limit, offset };
   }
