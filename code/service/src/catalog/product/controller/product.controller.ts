@@ -6,6 +6,7 @@ import { ChangeProductStatusDto } from './dto/change-product-status.dto';
 import { ChangeVariantStatusDto } from './dto/change-variant-status.dto';
 import { CreateProductDto } from './dto/create-product.dto';
 import { CreateVariantDto } from './dto/create-variant.dto';
+import { GetProductDto } from './dto/get-product.dto';
 import { GetAllProductsDto } from './dto/get-all-products.dto';
 import { VariantUuidDto } from './dto/variant-uuid.dto';
 import { ProductUuidDto } from './dto/product-uuid.dto';
@@ -27,8 +28,8 @@ export class ProductController {
   }
 
   @MessagePattern({ cmd: 'catalog.v2.product.getByUuid' })
-  getByUuid(@Payload() dto: ProductUuidDto) {
-    return this.service.getByUuid(dto.uuid);
+  getByUuid(@Payload() dto: GetProductDto) {
+    return this.service.getByUuid(dto.uuid, dto.withEmptyProperties ?? true);
   }
 
   @MessagePattern({ cmd: 'catalog.v2.product.variant.getAll' })

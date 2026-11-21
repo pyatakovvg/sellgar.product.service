@@ -22,6 +22,12 @@ import { VariantImageModel } from '../../catalog/product/variant-image.model';
 import { ImageModel } from '../../catalog/image/infrastructure/persistence/model/image.model';
 import { ProductEntity } from '../../catalog/product/entity/product.entity';
 import { ProductRepository } from '../../catalog/product/repository/product.repository';
+import { ProductController } from '../../catalog/product/controller/product.controller';
+import { ProductCommandMapper } from '../../catalog/product/controller/mapper/product-command.mapper';
+import { ProductService } from '../../catalog/product/service/product.service';
+import { ProductTypeRepository } from '../../catalog/product-type/repository/product-type.repository';
+import { PropertyAssignmentService } from '../../catalog/product/service/property-assignment.service';
+import { ProductFilterService } from '../../catalog/product/service/product-filter.service';
 import { ProductOutboxService } from './product-outbox.service';
 import { ProductSnapshotService } from './product-snapshot.service';
 
@@ -214,6 +220,97 @@ describeDatabase('Product snapshots with multiple collections on PostgreSQL', ()
     expect(products.map((product) => product.uuid)).toEqual([otherProductUuid, productUuid]);
     expect(ProductEntity.fromModel(products[0]).variants).toEqual([]);
     await expect(snapshots.get(database.manager, randomUUID())).rejects.toThrow('not found');
+  });
+
+  it('selects only filled properties per owner while default reads and events retain template fields', async () => {
+    const runner = database.createQueryRunner();
+    await runner.connect();
+    await runner.startTransaction('REPEATABLE READ');
+    try {
+      const manager = runner.manager;
+      const fields = [
+        { code: 'empty', kind: PropertyKind.TEXT },
+        { code: 'assignment-without-values', kind: PropertyKind.TEXT },
+        { code: 'zero', kind: PropertyKind.INTEGER },
+        { code: 'false', kind: PropertyKind.BOOLEAN },
+        { code: 'decimal-zero', kind: PropertyKind.DECIMAL },
+      ];
+      for (const [index, field] of fields.entries()) {
+        await manager.insert(PropertyModel, { ...field, name: field.code });
+        const definition = {
+          typeUuid,
+          propertyCode: field.code,
+          propertyKind: field.kind,
+          sortOrder: index + 10,
+        };
+        await manager.insert(TypeProductFieldModel, definition);
+        await manager.insert(TypeVariantFieldModel, definition);
+        if (field.code === 'empty') continue;
+
+        const assignment = { typeUuid, propertyCode: field.code, propertyKind: field.kind };
+        await manager.insert(ProductPropertyModel, { ...assignment, productUuid });
+        await manager.insert(VariantPropertyModel, { ...assignment, variantUuid: variantUuids[0] });
+        if (field.code === 'assignment-without-values') continue;
+
+        const value = {
+          ...assignment,
+          position: 0,
+          ...(field.kind === PropertyKind.INTEGER ? { valueInteger: '0' } : {}),
+          ...(field.kind === PropertyKind.BOOLEAN ? { valueBoolean: false } : {}),
+          ...(field.kind === PropertyKind.DECIMAL ? { valueDecimal: '0.000000000000' } : {}),
+        };
+        await manager.insert(ProductPropertyValueModel, { ...value, productUuid });
+        await manager.insert(VariantPropertyValueModel, { ...value, variantUuid: variantUuids[0] });
+      }
+      const repository = new ProductRepository(
+        { manager, transaction: (_isolation, callback) => callback(manager) } as DataSource,
+        {} as ProductOutboxService,
+        snapshots,
+      );
+      const service = new ProductService(
+        repository,
+        {} as ProductTypeRepository,
+        {} as PropertyAssignmentService,
+        {} as ProductFilterService,
+      );
+      const controller = new ProductController(service, {} as ProductCommandMapper);
+      queries.length = 0;
+      const selected = await controller.getByUuid({ uuid: productUuid, withEmptyProperties: false });
+      const codes = (entity: { properties: { propertyCode: string }[] }) =>
+        entity.properties.map((field) => field.propertyCode);
+      expect(codes(selected)).toEqual(['product-0', 'product-1', 'product-2', 'zero', 'false', 'decimal-zero']);
+      expect(codes(selected.variants[0])).toEqual(['variant-option', 'zero', 'false', 'decimal-zero']);
+      expect(selected.variants.slice(1).every((variant) => codes(variant).join() === 'variant-option')).toBe(true);
+      expect(selected.properties.find((field) => field.propertyCode === 'zero')!.values[0].valueInteger).toBe('0');
+      expect(selected.properties.find((field) => field.propertyCode === 'false')!.values[0].valueBoolean).toBe(false);
+      expect(selected.properties.find((field) => field.propertyCode === 'decimal-zero')!.values[0].valueDecimal).toBe(
+        '0.000000000000',
+      );
+      expect(selected.variants[0].properties[0].property.options).toHaveLength(5);
+      expect(selected.variants[0].images).toHaveLength(2);
+      expect(queries.some((query) => query.includes('EXISTS') && query.includes('product_property_value'))).toBe(true);
+      expect(queries.some((query) => query.includes('EXISTS') && query.includes('variant_property_value'))).toBe(true);
+      expect(queries.length).toBeLessThan(40);
+
+      const full = await controller.getByUuid({ uuid: productUuid });
+      expect(await controller.getByUuid({ uuid: productUuid, withEmptyProperties: true })).toEqual(full);
+      expect(codes(full)).toContain('empty');
+      expect(codes(full)).toContain('assignment-without-values');
+      expect(full.variants.every((variant) => codes(variant).includes('empty'))).toBe(true);
+      const add = jest.fn().mockResolvedValue(undefined);
+      const outbox = new ProductOutboxService({ add } as unknown as OutboxWriter, snapshots);
+      await outbox.updated(manager, productUuid);
+      expect(codes(add.mock.calls[0][1].payload)).toContain('empty');
+      expect(codes(add.mock.calls[0][1].payload.variants[0])).toContain('empty');
+
+      const withoutValues = ProductEntity.fromModel(await repository.getByUuid(otherProductUuid, false), false);
+      expect(withoutValues.properties).toEqual([]);
+      expect(withoutValues.variants).toEqual([]);
+      await expect(repository.getByUuid(randomUUID(), false)).rejects.toThrow('not found');
+    } finally {
+      await runner.rollbackTransaction();
+      await runner.release();
+    }
   });
 
   it('reads only the selected variant and rejects a variant belonging to another product', async () => {

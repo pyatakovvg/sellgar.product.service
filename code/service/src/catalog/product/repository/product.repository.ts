@@ -114,8 +114,10 @@ export class ProductRepository {
     query.andWhere(exists, parameters);
   }
 
-  getByUuid(uuid: string): Promise<ProductModel> {
-    return this.read(this.dataSource.manager, uuid);
+  getByUuid(uuid: string, withEmptyProperties = true): Promise<ProductModel> {
+    if (withEmptyProperties) return this.read(this.dataSource.manager, uuid);
+
+    return this.dataSource.transaction('REPEATABLE READ', (manager) => this.readFilledProperties(manager, uuid));
   }
 
   async getVariants(productUuid: string, variantUuid?: string) {
@@ -479,6 +481,74 @@ export class ProductRepository {
   private async bumpProduct(manager: EntityManager, product: ProductModel): Promise<void> {
     product.version += 1;
     await manager.save(ProductModel, product);
+  }
+
+  private async readFilledProperties(manager: EntityManager, uuid: string): Promise<ProductModel> {
+    const product = await manager.findOne(ProductModel, {
+      where: { uuid },
+      relations: { productType: true, variants: { images: { image: true } } },
+      relationLoadStrategy: 'query',
+    });
+    if (!product) throw new NotFoundException(`Product ${uuid} not found`);
+
+    const productProperties = manager.createQueryBuilder(ProductPropertyModel, 'assignment').setFindOptions({
+      where: { productUuid: uuid },
+      relations: { values: true, typeField: { property: { options: { extras: true } } } },
+      relationLoadStrategy: 'query',
+    });
+    productProperties.andWhere((query) => {
+      const values = query
+        .subQuery()
+        .select('1')
+        .from(ProductPropertyValueModel, 'value')
+        .where('value.product_uuid = assignment.product_uuid')
+        .andWhere('value.type_uuid = assignment.type_uuid')
+        .andWhere('value.property_code = assignment.property_code');
+      return `EXISTS ${values.getQuery()}`;
+    });
+    product.properties = await productProperties.getMany();
+    product.properties.sort(
+      (left, right) =>
+        left.typeField.sortOrder - right.typeField.sortOrder || left.propertyCode.localeCompare(right.propertyCode),
+    );
+    for (const property of product.properties) property.values.sort((left, right) => left.position - right.position);
+
+    product.variants.sort((left, right) => left.uuid.localeCompare(right.uuid));
+    for (const variant of product.variants) {
+      variant.properties = [];
+      variant.images.sort(
+        (left, right) => left.sortOrder - right.sortOrder || left.imageUuid.localeCompare(right.imageUuid),
+      );
+    }
+    if (product.variants.length === 0) return product;
+
+    const variantProperties = manager.createQueryBuilder(VariantPropertyModel, 'assignment').setFindOptions({
+      where: { variantUuid: In(product.variants.map((variant) => variant.uuid)) },
+      relations: { values: true, typeField: { property: { options: { extras: true } } } },
+      relationLoadStrategy: 'query',
+    });
+    variantProperties.andWhere((query) => {
+      const values = query
+        .subQuery()
+        .select('1')
+        .from(VariantPropertyValueModel, 'value')
+        .where('value.variant_uuid = assignment.variant_uuid')
+        .andWhere('value.type_uuid = assignment.type_uuid')
+        .andWhere('value.property_code = assignment.property_code');
+      return `EXISTS ${values.getQuery()}`;
+    });
+    const byUuid = new Map(product.variants.map((variant) => [variant.uuid, variant]));
+    for (const property of await variantProperties.getMany()) {
+      property.values.sort((left, right) => left.position - right.position);
+      byUuid.get(property.variantUuid)!.properties.push(property);
+    }
+    for (const variant of product.variants) {
+      variant.properties.sort(
+        (left, right) =>
+          left.typeField.sortOrder - right.typeField.sortOrder || left.propertyCode.localeCompare(right.propertyCode),
+      );
+    }
+    return product;
   }
 
   private async read(manager: EntityManager, uuid: string): Promise<ProductModel> {

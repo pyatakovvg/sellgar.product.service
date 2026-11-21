@@ -68,3 +68,14 @@
 
 Внутренний `GET /health` на `PORT` (default 8080) отражает PostgreSQL и оба
 RMQ consumer. Доменные команды и event-контракты при деплое не изменяются.
+
+## Выборка характеристик для витрины
+
+- `catalog.v2.product.getByUuid` принимает необязательный boolean `withEmptyProperties`.
+  По умолчанию `true`: полный набор полей шаблона для админки.
+- При `false` repository выбирает назначения, для которых существуют строки значений
+  (`EXISTS`), отдельно для товара и каждого варианта. Ноль и false являются значениями.
+  Определения полей и options загружаются через назначения, пустые поля шаблона не читаются.
+- Это read-only режим: шаблон, admin variant reads, mutations и полные outbox-снимки
+  не меняются. Никакой фильтрации свойств в Client gateway и frontend.
+- PostgreSQL-проверка: `PRODUCT_SNAPSHOT_DATABASE_TESTS=1 yarn test --runInBand product-snapshot.integration.spec.ts`.

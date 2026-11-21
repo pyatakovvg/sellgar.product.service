@@ -38,11 +38,11 @@ export class ProductService {
   ): Promise<ProductPageEntity> {
     const normalizedFilters = await this.filterService.normalize(filters);
     const page = await this.repository.getAll(limit, offset, status, typeUuid, normalizedFilters, term);
-    return { ...page, items: page.items.map(ProductEntity.fromModel) };
+    return { ...page, items: page.items.map((product) => ProductEntity.fromModel(product)) };
   }
 
-  async getByUuid(uuid: string): Promise<ProductEntity> {
-    return ProductEntity.fromModel(await this.repository.getByUuid(uuid));
+  async getByUuid(uuid: string, withEmptyProperties = true): Promise<ProductEntity> {
+    return ProductEntity.fromModel(await this.repository.getByUuid(uuid, withEmptyProperties), withEmptyProperties);
   }
 
   async getVariants(productUuid: string): Promise<VariantListEntity> {

@@ -17,9 +17,11 @@ export class ProductEntity {
   properties: ProductFieldEntity[];
   variants: VariantEntity[];
 
-  static fromModel(model: ProductModel): ProductEntity {
+  static fromModel(model: ProductModel, withEmptyProperties = true): ProductEntity {
     const assignments = new Map((model.properties ?? []).map((assignment) => [assignment.propertyCode, assignment]));
-    const productFields = model.productType.productFields ?? [];
+    const productFields = withEmptyProperties
+      ? (model.productType.productFields ?? [])
+      : (model.properties ?? []).map((assignment) => assignment.typeField);
     const variantFields = model.productType.variantFields ?? [];
     return {
       uuid: model.uuid,
@@ -35,7 +37,9 @@ export class ProductEntity {
       properties: productFields.map((field) =>
         ProductFieldEntity.fromModels(field, assignments.get(field.propertyCode)),
       ),
-      variants: (model.variants ?? []).map((variant) => VariantEntity.fromModel(variant, variantFields)),
+      variants: (model.variants ?? []).map((variant) =>
+        VariantEntity.fromModel(variant, variantFields, withEmptyProperties),
+      ),
     };
   }
 }
