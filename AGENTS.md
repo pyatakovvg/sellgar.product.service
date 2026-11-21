@@ -37,6 +37,10 @@
   затем отдельным smoke — пустую БД, миграции, RMQ, inbox/outbox и readiness.
 - Runtime содержит только production dependencies, compiled service и outbox;
   PostgreSQL присутствует только в проверочном этапе сборки.
+- Docker targets `application` и `migration` используют общую проверенную сборку.
+  Первый не содержит migrations/CLI DataSource; второй выполняет TypeORM CLI без
+  старта Nest. CI smoke принимает оба образа. Release manifest v2 и Helm-пакет
+  закрепляют оба digest; prod продвигает ту же пару без сборки.
 - Секреты приходят из Kubernetes Secret, `.env` — из ConfigMap. Не включать
   локальные `.env`, credentials и данные в Git/образ.
 

@@ -24,6 +24,8 @@ jobs:
     outputs:
       image_ref: ${{ steps.build.outputs.image_ref }}
       image_id: ${{ steps.build.outputs.image_id }}
+      migration_image_ref: ${{ steps.build.outputs.migration_image_ref }}
+      migration_image_id: ${{ steps.build.outputs.migration_image_id }}
       source_tree: ${{ steps.build.outputs.source_tree }}
       image_artifact: ${{ steps.build.outputs.image_artifact }}
     steps:
@@ -54,14 +56,24 @@ jobs:
         shell: bash
         run: |
           image_ref="${IMAGE_NAME,,}:sha-${GITHUB_SHA}"
+          migration_image_ref="${IMAGE_NAME,,}:sha-${GITHUB_SHA}-migration"
           docker build \
             --platform linux/amd64 \
+            --target application \
             --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
             --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
             --tag "$image_ref" .
           image_id=$(docker image inspect --format '{{.Id}}' "$image_ref")
-          docker save --output "$RUNNER_TEMP/image.tar" "$image_ref"
+          docker build \
+            --platform linux/amd64 \
+            --target migration \
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --tag "$migration_image_ref" .
+          migration_image_id=$(docker image inspect --format '{{.Id}}' "$migration_image_ref")
+          docker save --output "$RUNNER_TEMP/image.tar" "$image_ref" "$migration_image_ref"
           printf 'image_ref=%s\nimage_id=%s\n' "$image_ref" "$image_id" >> "$GITHUB_OUTPUT"
+          printf 'migration_image_ref=%s\nmigration_image_id=%s\n' "$migration_image_ref" "$migration_image_id" >> "$GITHUB_OUTPUT"
           printf 'source_tree=%s\n' "$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
           printf 'image_artifact=product-service-image-%s\n' "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
 
@@ -81,6 +93,8 @@ jobs:
     env:
       IMAGE_REF: ${{ needs.build.outputs.image_ref }}
       EXPECTED_IMAGE_ID: ${{ needs.build.outputs.image_id }}
+      MIGRATION_IMAGE_REF: ${{ needs.build.outputs.migration_image_ref }}
+      EXPECTED_MIGRATION_IMAGE_ID: ${{ needs.build.outputs.migration_image_id }}
     steps:
       - name: Checkout smoke script
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -98,9 +112,10 @@ jobs:
         run: |
           docker load --input "$RUNNER_TEMP/image.tar"
           test "$(docker image inspect --format '{{.Id}}' "$IMAGE_REF")" = "$EXPECTED_IMAGE_ID"
+          test "$(docker image inspect --format '{{.Id}}' "$MIGRATION_IMAGE_REF")" = "$EXPECTED_MIGRATION_IMAGE_ID"
 
       - name: Run service smoke with mounted .env
-        run: python3 .github/scripts/smoke-image.py "$IMAGE_REF"
+        run: python3 .github/scripts/smoke-image.py "$IMAGE_REF" "$MIGRATION_IMAGE_REF"
 
   publish:
     needs: [build, smoke]
@@ -113,9 +128,12 @@ jobs:
     env:
       IMAGE_REF: ${{ needs.build.outputs.image_ref }}
       EXPECTED_IMAGE_ID: ${{ needs.build.outputs.image_id }}
+      MIGRATION_IMAGE_REF: ${{ needs.build.outputs.migration_image_ref }}
+      EXPECTED_MIGRATION_IMAGE_ID: ${{ needs.build.outputs.migration_image_id }}
       SOURCE_TREE: ${{ needs.build.outputs.source_tree }}
     outputs:
       digest: ${{ steps.publish.outputs.digest }}
+      migration_digest: ${{ steps.publish.outputs.migration_digest }}
       image: ${{ steps.publish.outputs.image }}
       target_environment: ${{ steps.target.outputs.environment }}
     steps:
@@ -146,6 +164,7 @@ jobs:
         run: |
           docker load --input "$RUNNER_TEMP/image.tar"
           test "$(docker image inspect --format '{{.Id}}' "$IMAGE_REF")" = "$EXPECTED_IMAGE_ID"
+          test "$(docker image inspect --format '{{.Id}}' "$MIGRATION_IMAGE_REF")" = "$EXPECTED_MIGRATION_IMAGE_ID"
 
       - name: Login to GHCR
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
@@ -161,16 +180,22 @@ jobs:
           TARGET_ENVIRONMENT: ${{ steps.target.outputs.environment }}
         run: |
           docker push "$IMAGE_REF"
+          docker push "$MIGRATION_IMAGE_REF"
           image=$(docker image inspect --format '{{index .RepoDigests 0}}' "$IMAGE_REF")
+          migration_image=$(docker image inspect --format '{{index .RepoDigests 0}}' "$MIGRATION_IMAGE_REF")
           digest="${image##*@}"
+          migration_digest="${migration_image##*@}"
           [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "$migration_digest" =~ ^sha256:[0-9a-f]{64}$ ]]
           printf 'digest=%s\nimage=%s\n' "$digest" "$image" >> "$GITHUB_OUTPUT"
-          printf '### Published image\n\n- Target: `%s`\n- Tag: `%s`\n- Image: `%s`\n' \
-            "$TARGET_ENVIRONMENT" "$IMAGE_REF" "$image" >> "$GITHUB_STEP_SUMMARY"
+          printf 'migration_digest=%s\n' "$migration_digest" >> "$GITHUB_OUTPUT"
+          printf '### Published release images\n\n- Target: `%s`\n- Application: `%s`\n- Migration: `%s`\n' \
+            "$TARGET_ENVIRONMENT" "$image" "$migration_image" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Record published build
         env:
           IMAGE_DIGEST: ${{ steps.publish.outputs.digest }}
+          MIGRATION_IMAGE_DIGEST: ${{ steps.publish.outputs.migration_digest }}
         run: python3 -B .github/scripts/release.py record "$RUNNER_TEMP/release"
 
       - name: Upload release manifest
@@ -195,7 +220,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: pyatakovvg/sellgar.infrastructure
-          ref: 0e194f8fb73b133d9882b2979840b6dc0b989ea1
+          ref: 2d5fdbc6b74515e5a9dc35d9e89b734eac5625a0
           path: delivery
           sparse-checkout: |
             .github/actions/publish-helm
@@ -208,5 +233,6 @@ jobs:
           environment: dev
           source-commit: ${{ github.sha }}
           image-digest: ${{ needs.publish.outputs.digest }}
+          migration-image-digest: ${{ needs.publish.outputs.migration_digest }}
           release-name: product-service
           github-token: ${{ secrets.GITHUB_TOKEN }}

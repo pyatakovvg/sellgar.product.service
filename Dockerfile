@@ -24,7 +24,7 @@ FROM builder AS production-dependencies
 COPY --from=verifier /tmp/product-tests-passed /tmp/product-tests-passed
 RUN node .yarn/releases/yarn-4.18.0.cjs workspaces focus @service/product --production
 
-FROM node:24-bookworm-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54 AS server
+FROM node:24-bookworm-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54 AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=production-dependencies --chown=node:node /app/node_modules ./node_modules
@@ -34,5 +34,13 @@ COPY --from=builder --chown=node:node /app/service/dist ./service/dist
 COPY --from=builder --chown=node:node /app/service/package.json ./service/package.json
 COPY --from=builder --chown=node:node /app/package.json ./package.json
 USER node
+
+FROM runtime AS migration
+LABEL io.sellgar.image-role=migration
+CMD ["node", "--env-file=.env", "node_modules/typeorm/cli.js", "-d", "service/dist/database/data-source.js", "migration:run"]
+
+FROM runtime AS application
+LABEL io.sellgar.image-role=application
+RUN rm -rf service/dist/database/migrations service/dist/database/data-source.*
 EXPOSE 8080
 CMD ["node", "--env-file=.env", "service/dist/main.js"]

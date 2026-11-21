@@ -14,6 +14,7 @@ SOURCE_COMMIT = "1" * 40
 MASTER_COMMIT = "2" * 40
 SOURCE_TREE = "3" * 40
 DIGEST = "sha256:" + "4" * 64
+MIGRATION_DIGEST = "sha256:" + "8" * 64
 
 
 class ReleaseTests(unittest.TestCase):
@@ -47,12 +48,13 @@ class ReleaseTests(unittest.TestCase):
             "conclusion": "success",
         }
         self.manifest = {
-            "schema_version": 1,
+            "schema_version": 2,
             "repository": REPOSITORY,
             "environment": "stage",
             "source": {"branch": "release/1.2.0", "commit": SOURCE_COMMIT, "tree": SOURCE_TREE},
             "build": {"run_id": 100, "attempt": 1, "workflow": release.WORKFLOW_PATH},
             "image": {"repository": f"ghcr.io/{REPOSITORY}", "digest": DIGEST},
+            "migration_image": {"repository": f"ghcr.io/{REPOSITORY}", "digest": MIGRATION_DIGEST},
         }
         self.source = {"sha": SOURCE_COMMIT, "commit": {"tree": {"sha": SOURCE_TREE}}}
         self.master = {"sha": MASTER_COMMIT, "commit": {"tree": {"sha": SOURCE_TREE}}}
@@ -74,9 +76,12 @@ class ReleaseTests(unittest.TestCase):
         promoted = json.loads((self.path / "production/release.json").read_text())
         values = json.loads((self.path / "production/image-values.yaml").read_text())
         self.assertEqual(promoted["image"], self.manifest["image"])
+        self.assertEqual(promoted["migration_image"], self.manifest["migration_image"])
         self.assertEqual(promoted["environment"], "prod")
         self.assertEqual(promoted["promotion"]["master_commit"], MASTER_COMMIT)
-        self.assertEqual(values, {"image": self.manifest["image"]})
+        self.assertEqual(values, {
+            "image": self.manifest["image"], "migration": {"image": self.manifest["migration_image"]},
+        })
         self.assertIn(f"image=ghcr.io/{REPOSITORY}@{DIGEST}\n", (self.path / "outputs").read_text())
 
     def test_only_successful_release_push_from_expected_workflow_can_be_promoted(self):
@@ -96,7 +101,7 @@ class ReleaseTests(unittest.TestCase):
     def test_manifest_cannot_substitute_another_build_or_image(self):
         changes = [
             ("repository", None, "other/repository"),
-            ("schema_version", None, 2),
+            ("schema_version", None, 1),
             ("environment", None, "dev"),
             ("source", "commit", "5" * 40),
             ("source", "branch", "release/other"),
@@ -106,6 +111,8 @@ class ReleaseTests(unittest.TestCase):
             ("build", "workflow", ".github/workflows/other.yml"),
             ("image", "repository", "ghcr.io/other/image"),
             ("image", "digest", "latest"),
+            ("migration_image", "repository", "ghcr.io/other/image"),
+            ("migration_image", "digest", "latest"),
         ]
         for parent, key, value in changes:
             with self.subTest(parent=parent, key=key):
@@ -123,6 +130,11 @@ class ReleaseTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "differs from tested release"):
                 release.verify("100", self.path)
         self.assertFalse((self.path / "production").exists())
+
+    def test_rejects_manifest_without_migration_image(self):
+        del self.manifest["migration_image"]
+        with self.assertRaisesRegex(ValueError, "include the migration image"):
+            release.validate_manifest(self.manifest, self.run, REPOSITORY)
 
     def test_rejects_unmerged_release_even_if_tree_matches(self):
         self.comparison["status"] = "diverged"
@@ -152,11 +164,13 @@ class ReleaseTests(unittest.TestCase):
                 api.assert_not_called()
 
     def test_record_persists_digest_and_source_for_a_release(self):
-        with patch.dict(os.environ, GITHUB_SHA=SOURCE_COMMIT, SOURCE_TREE=SOURCE_TREE, IMAGE_DIGEST=DIGEST):
+        with patch.dict(os.environ, GITHUB_SHA=SOURCE_COMMIT, SOURCE_TREE=SOURCE_TREE, IMAGE_DIGEST=DIGEST,
+                        MIGRATION_IMAGE_DIGEST=MIGRATION_DIGEST):
             release.record(self.path / "record")
         record = json.loads((self.path / "record/release.json").read_text())
         self.assertEqual(record["source"], self.manifest["source"])
         self.assertEqual(record["image"], self.manifest["image"])
+        self.assertEqual(record["migration_image"], self.manifest["migration_image"])
         self.assertEqual(record["environment"], "stage")
 
     def test_back_merge_reuses_existing_pr(self):

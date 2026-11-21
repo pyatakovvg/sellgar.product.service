@@ -11,6 +11,7 @@ import urllib.request
 import uuid
 
 image = sys.argv[1]
+migration_image = sys.argv[2]
 network = 'product-smoke-' + uuid.uuid4().hex[:10]
 containers = []
 
@@ -193,8 +194,7 @@ try:
         env.chmod(0o644)
         mount = ['--mount', f'type=bind,src={env},dst=/app/.env,readonly']
         for _ in range(2):
-            docker('run', '--rm', '--network', network, *mount, image, 'node', '--env-file=.env',
-                   'node_modules/typeorm/cli.js', '-d', 'service/dist/database/data-source.js', 'migration:run')
+            docker('run', '--rm', '--network', network, *mount, migration_image)
         migration_count = docker('exec', database, 'psql', '-U', 'product_srv_v2', '-d', 'product_srv_v2', '-Atc',
                                  'SELECT count(*) FROM migrations')
         assert migration_count == '8', f'Expected eight migrations, got {migration_count}'
@@ -215,6 +215,10 @@ try:
         else:
             raise RuntimeError('Product readiness timeout')
         assert docker('exec', app, 'id', '-u') == '1000'
+        docker('exec', app, 'node', '-e',
+               "const assert = require('node:assert/strict'); const fs = require('node:fs'); "
+               "assert.equal(fs.existsSync('service/dist/database/migrations'), false); "
+               "assert.equal(fs.existsSync('service/dist/database/data-source.js'), false);")
         print(docker('exec', app, 'node', '-e', product_check))
         print(docker('exec', app, 'node', '--env-file=.env', '--expose-gc', '--max-old-space-size=128', '-e', product_memory_check))
         # Disconnect only the isolated broker to verify the readiness contract.

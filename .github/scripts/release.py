@@ -62,7 +62,7 @@ def record(directory):
     branch = os.environ["GITHUB_REF_NAME"]
     require(branch == "development" or branch.startswith("release/"), "Not a build branch")
     manifest = {
-        "schema_version": 1,
+        "schema_version": 2,
         "repository": os.environ["GITHUB_REPOSITORY"],
         "environment": "dev" if branch == "development" else "stage",
         "source": {
@@ -79,17 +79,24 @@ def record(directory):
             "repository": f"ghcr.io/{os.environ['GITHUB_REPOSITORY'].lower()}",
             "digest": os.environ["IMAGE_DIGEST"],
         },
+        "migration_image": {
+            "repository": f"ghcr.io/{os.environ['GITHUB_REPOSITORY'].lower()}",
+            "digest": os.environ["MIGRATION_IMAGE_DIGEST"],
+        },
     }
     image = validate_image(manifest["image"], manifest["repository"])
+    migration_image = validate_image(manifest["migration_image"], manifest["repository"])
     write_json(directory / "release.json", manifest)
-    write_json(directory / "image-values.yaml", {"image": manifest["image"]})
+    write_json(directory / "image-values.yaml", {
+        "image": manifest["image"], "migration": {"image": manifest["migration_image"]},
+    })
     if manifest["environment"] == "dev":
-        summary(f"### Development image\n\n`{image}`")
+        summary(f"### Development images\n\n- Application: `{image}`\n- Migration: `{migration_image}`")
         return
 
     run_id = manifest["build"]["run_id"]
     summary(
-        f"### Release build\n\n- Branch: `{branch}`\n- Image: `{image}`\n"
+        f"### Release build\n\n- Branch: `{branch}`\n- Image: `{image}`\n- Migration: `{migration_image}`\n"
         f"- Release run ID: `{run_id}`\n"
         f"- Run: {os.environ['GITHUB_SERVER_URL']}/{manifest['repository']}/actions/runs/{run_id}\n"
         "\nFor production, merge this release into master and use Release to production → Run workflow."
@@ -114,7 +121,7 @@ def selected_run(run_id):
 
 
 def validate_manifest(manifest, run, repository):
-    require(manifest["schema_version"] == 1, "Unsupported release manifest version")
+    require(manifest["schema_version"] == 2, "A paired-image release manifest is required; rebuild the candidate")
     require(manifest["repository"] == repository, "Manifest belongs to another repository")
     require(manifest["environment"] == "stage", "Only release candidates can be promoted")
     require(manifest["build"]["run_id"] == run["id"], "Manifest belongs to another CI run")
@@ -124,6 +131,8 @@ def validate_manifest(manifest, run, repository):
     require(manifest["source"]["branch"] == run["head_branch"], "Manifest branch does not match CI")
     require(re.fullmatch(r"[0-9a-f]{40}", manifest["source"]["commit"]), "Invalid source commit")
     require(re.fullmatch(r"[0-9a-f]{40}", manifest["source"]["tree"]), "Invalid source tree")
+    require(isinstance(manifest.get("migration_image"), dict), "Release manifest must include the migration image")
+    validate_image(manifest["migration_image"], repository)
     return validate_image(manifest["image"], repository)
 
 
@@ -142,6 +151,9 @@ def verify(run_id, directory):
         image=image,
         image_repository=manifest["image"]["repository"],
         image_digest=manifest["image"]["digest"],
+        migration_image=validate_image(manifest["migration_image"], os.environ["GITHUB_REPOSITORY"]),
+        migration_image_repository=manifest["migration_image"]["repository"],
+        migration_image_digest=manifest["migration_image"]["digest"],
         source_commit=manifest["source"]["commit"],
         master_commit=master["sha"],
     )
@@ -158,14 +170,17 @@ def promote(run_id, directory):
         "actor": os.environ["GITHUB_ACTOR"],
     }
     write_json(directory / "production" / "release.json", manifest)
-    write_json(directory / "production" / "image-values.yaml", {"image": manifest["image"]})
+    write_json(directory / "production" / "image-values.yaml", {
+        "image": manifest["image"], "migration": {"image": manifest["migration_image"]},
+    })
     summary(
         f"### Approved production release\n\n"
         f"- Image: `{manifest['image']['repository']}@{manifest['image']['digest']}`\n"
+        f"- Migration: `{manifest['migration_image']['repository']}@{manifest['migration_image']['digest']}`\n"
         f"- Source: `{manifest['source']['commit']}`\n"
         f"- Master: `{os.environ['GITHUB_SHA']}`\n"
         f"- Approved by manual workflow: `{os.environ['GITHUB_ACTOR']}`\n\n"
-        "Artifact production-release contains the deployment input. Kubernetes rollout is not connected yet."
+        "Artifact production-release pins both images. Argo CD runs the migration Job before the application rollout."
     )
 
 

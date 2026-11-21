@@ -33,6 +33,7 @@ jobs:
       image: ${{ steps.promote.outputs.image }}
       image_repository: ${{ steps.promote.outputs.image_repository }}
       image_digest: ${{ steps.promote.outputs.image_digest }}
+      migration_image_digest: ${{ steps.promote.outputs.migration_image_digest }}
       source_commit: ${{ steps.promote.outputs.source_commit }}
       master_commit: ${{ steps.promote.outputs.master_commit }}
     steps:
@@ -66,15 +67,21 @@ jobs:
       - name: Verify published image and run smoke
         env:
           IMAGE: ${{ steps.verify.outputs.image }}
+          MIGRATION_IMAGE: ${{ steps.verify.outputs.migration_image }}
           SOURCE_COMMIT: ${{ steps.verify.outputs.source_commit }}
         shell: bash
         run: |
           docker pull "$IMAGE"
+          docker pull "$MIGRATION_IMAGE"
           revision=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$IMAGE")
           source=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.source"}}' "$IMAGE")
           test "$revision" = "$SOURCE_COMMIT"
           test "$source" = "https://github.com/$GITHUB_REPOSITORY"
-          python3 -B .github/scripts/smoke-image.py "$IMAGE"
+          test "$(docker image inspect --format '{{index .Config.Labels "io.sellgar.image-role"}}' "$IMAGE")" = application
+          test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$MIGRATION_IMAGE")" = "$SOURCE_COMMIT"
+          test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.source"}}' "$MIGRATION_IMAGE")" = "https://github.com/$GITHUB_REPOSITORY"
+          test "$(docker image inspect --format '{{index .Config.Labels "io.sellgar.image-role"}}' "$MIGRATION_IMAGE")" = migration
+          python3 -B .github/scripts/smoke-image.py "$IMAGE" "$MIGRATION_IMAGE"
 
       - name: Prepare approved production release
         id: promote
@@ -93,7 +100,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: pyatakovvg/sellgar.infrastructure
-          ref: 0e194f8fb73b133d9882b2979840b6dc0b989ea1
+          ref: 2d5fdbc6b74515e5a9dc35d9e89b734eac5625a0
           path: delivery
           sparse-checkout: |
             .github/actions/publish-helm
@@ -106,6 +113,7 @@ jobs:
           environment: prod
           source-commit: ${{ steps.promote.outputs.source_commit }}
           image-digest: ${{ steps.promote.outputs.image_digest }}
+          migration-image-digest: ${{ steps.promote.outputs.migration_image_digest }}
           release-name: product-service
           github-token: ${{ secrets.GITHUB_TOKEN }}
 

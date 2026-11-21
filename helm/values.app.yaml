@@ -69,11 +69,19 @@ ingress:
   enabled: false
 migration:
   enabled: true
-  command:
-  - node
-  args:
-  - --env-file=.env
-  - node_modules/typeorm/cli.js
-  - -d
-  - service/dist/database/data-source.js
-  - migration:run
+  image:
+    repository: ghcr.io/pyatakovvg/sellgar.product.service
+  env:
+    PRODUCT_DATABASE_USERNAME:
+      valueFrom:
+        secretKeyRef:
+          name: product-database
+          key: username
+    PRODUCT_DATABASE_PASSWORD:
+      valueFrom:
+        secretKeyRef:
+          name: product-database
+          key: password
+  backoffLimit: 0
+  activeDeadlineSeconds: 600
+  ttlSecondsAfterFinished: 86400
