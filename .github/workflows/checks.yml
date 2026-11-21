@@ -1,0 +1,39 @@
+name: Product checks and release candidate
+
+on:
+  pull_request:
+    branches: [development, 'release/**', master]
+  push:
+    branches: ['release/**']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: product-checks-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  images:
+    uses: pyatakovvg/sellgar.infrastructure/.github/workflows/build-service.yml@delivery-v0.5.1
+    permissions:
+      contents: write
+      packages: write
+    secrets:
+      SUBMODULES_READ_TOKEN: ${{ secrets.SUBMODULES_READ_TOKEN }}
+    with:
+      publish: ${{ github.event_name == 'push' }}
+
+  tests:
+    name: Component tests
+    needs: images
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          submodules: recursive
+          token: ${{ secrets.SUBMODULES_READ_TOKEN || github.token }}
+          persist-credentials: false
+      - name: Run Product Jest tests
+        run: docker build --platform linux/amd64 --target tests --progress plain .

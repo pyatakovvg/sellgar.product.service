@@ -38,6 +38,8 @@
   migrate работает с БД выбранной среды. Deploy зависит от обеих jobs.
 - На PR без публикации выполняется build → tests; release/* запускает tests
   после publish. Prod принимает только кандидата с успешным CI целиком.
+- Dev запускается только через `ci.yml`; PR/release — через `checks.yml`.
+  Не добавлять jobs других сценариев в dev workflow с условием skip.
 - Runtime содержит только production dependencies, compiled service и outbox;
   PostgreSQL присутствует только в проверочном этапе сборки.
 - Docker targets `application` и `migration` используют общую проверенную сборку.
@@ -46,7 +48,8 @@
   GitHub Release хранит release.json
   с обоими digest, source SHA и chart SHA. Prod принимает тег кандидата и
   продвигает ту же пару без сборки.
-- Доставка вызывает общий reusable workflow infrastructure: migrate → deploy.
+- Сборка/публикация вызывают `build-service.yml` infrastructure; доставка —
+  `deliver-service.yml`: параллельные test/migrate → deploy.
   Команды Kubernetes/Helm находятся прямо в jobs; delivery Python/scripts и
   сгенерированные per-release Helm-пакеты Product не использует.
 - Application `.env` — отдельный immutable ConfigMap версии выпуска. Миграция

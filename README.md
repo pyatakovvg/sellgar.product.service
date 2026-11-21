@@ -25,6 +25,12 @@ docker build --target tests --progress plain .
 
 ## CI и доставка
 
+`ci.yml` запускается только на push в development. В его графе только пять
+выполняемых jobs: build, publish, test, migrate, deploy.
+`checks.yml` обслуживает PR и push в release/*; в dev-запуск он не входит.
+Общая сборка и публикация определены один раз в reusable `build-service.yml`
+репозитория infrastructure. Тесты и миграция доставки — в `deliver-service.yml`.
+
 `development`: build → publish → delivery/[test | migrate] → delivery/deploy.
 `release/*`: build → publish → tests; кандидат допускается к prod только после
 успешного CI целиком. PR выполняет build → tests, без публикации и миграций.
@@ -42,9 +48,9 @@ DataSource, `migration` выполняет TypeORM CLI и завершает п�
 оба digest и CI run. Для кандидатов включается GitHub immutable releases.
 
 Helm values принадлежат сервису: `helm/values.app.yaml` и `helm/dev|prod/values.yaml`.
-Общие templates и reusable delivery workflow принадлежат infrastructure.
+Общие templates и reusable build/delivery workflows принадлежат infrastructure.
 Chart checkout при build закрепляется SHA в кандидате, values берутся из source SHA.
-Workflow и checkout chart закреплены версией `delivery-v0.5.0` infrastructure;
+Workflow и checkout chart закреплены версией `delivery-v0.5.1` infrastructure;
 сначала публикуется этот immutable release/tag, затем Product. Тег не перемещается.
 Собственных Python-скриптов в CI и доставке Product нет. Отдельная RMQ/Docker
 smoke-цепочка удалена; под другим именем она не переносится.

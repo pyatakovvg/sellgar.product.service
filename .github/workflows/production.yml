@@ -60,7 +60,7 @@ jobs:
           [[ "$run" =~ ^[1-9][0-9]*$ ]]
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run" | jq -e --arg source "$source" \
             '.head_sha == $source and .event == "push" and (.head_branch | startswith("release/")) and
-             .path == ".github/workflows/ci.yml" and .conclusion == "success"'
+             .path == ".github/workflows/checks.yml" and .conclusion == "success"'
           printf 'source=%s\nchart=%s\nimage=%s\nmigration=%s\n' "$source" \
             "$(jq -r .chart_revision "$metadata")" "$(jq -r .image_digest "$metadata")" \
             "$(jq -r .migration_image_digest "$metadata")" >> "$GITHUB_OUTPUT"
@@ -86,7 +86,7 @@ jobs:
 
   delivery:
     needs: validate
-    uses: pyatakovvg/sellgar.infrastructure/.github/workflows/deliver-service.yml@delivery-v0.5.0
+    uses: pyatakovvg/sellgar.infrastructure/.github/workflows/deliver-service.yml@delivery-v0.5.1
     secrets:
       SUBMODULES_READ_TOKEN: ${{ secrets.SUBMODULES_READ_TOKEN }}
     with:

@@ -1,178 +1,30 @@
-name: Product CI
+name: Product development
 
 on:
-  pull_request:
-    branches: [development, 'release/**', master]
   push:
-    branches: [development, 'release/**']
+    branches: [development]
 
 permissions:
   contents: read
 
 concurrency:
-  group: product-ci-${{ github.ref }}
+  group: product-development
   cancel-in-progress: false
 
-defaults:
-  run:
-    shell: bash
-
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    outputs:
-      image: ${{ steps.build.outputs.image }}
-      migration_image: ${{ steps.build.outputs.migration_image }}
-      image_id: ${{ steps.build.outputs.image_id }}
-      migration_image_id: ${{ steps.build.outputs.migration_image_id }}
-      artifact: ${{ steps.build.outputs.artifact }}
-      chart_revision: ${{ steps.chart.outputs.revision }}
-    steps:
-      - name: Validate release PR
-        if: github.event_name == 'pull_request' && github.base_ref == 'master'
-        env:
-          HEAD_BRANCH: ${{ github.head_ref }}
-          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
-        run: |
-          test "$HEAD_REPOSITORY" = "$GITHUB_REPOSITORY"
-          [[ "$HEAD_BRANCH" == release/* ]]
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          submodules: recursive
-          token: ${{ secrets.SUBMODULES_READ_TOKEN || github.token }}
-          persist-credentials: false
-      - name: Checkout shared chart
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          repository: pyatakovvg/sellgar.infrastructure
-          ref: delivery-v0.5.0
-          path: infrastructure
-          sparse-checkout: charts/application
-          persist-credentials: false
-      - id: chart
-        run: printf 'revision=%s\n' "$(git -C infrastructure rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
-        with:
-          version: v4.3.2
-      - name: Validate Helm for both environments
-        run: |
-          digest="sha256:$(printf '%064d' 0)"
-          for environment in dev prod; do
-            helm lint infrastructure/charts/application --strict \
-              -f helm/values.app.yaml -f "helm/$environment/values.yaml" \
-              --set-string image.digest="$digest" --set-string releaseId=ci
-            helm template product-service-migration infrastructure/charts/application \
-              -f helm/values.app.yaml -f "helm/$environment/values.yaml" \
-              --set workload=migration --set-string migration.image.digest="$digest" > /dev/null
-          done
-      - name: Build images
-        id: build
-        run: |
-          repository="ghcr.io/${GITHUB_REPOSITORY,,}"
-          version="$GITHUB_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-          image="$repository:app-$version"
-          migration_image="$repository:migration-$version"
-          docker build --platform linux/amd64 --target application \
-            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
-            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" -t "$image" .
-          docker build --platform linux/amd64 --target migration \
-            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
-            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" -t "$migration_image" .
-          docker save -o "$RUNNER_TEMP/images.tar" "$image" "$migration_image"
-          printf 'image=%s\nmigration_image=%s\n' "$image" "$migration_image" >> "$GITHUB_OUTPUT"
-          printf 'image_id=%s\n' "$(docker image inspect -f '{{.Id}}' "$image")" >> "$GITHUB_OUTPUT"
-          printf 'migration_image_id=%s\n' "$(docker image inspect -f '{{.Id}}' "$migration_image")" >> "$GITHUB_OUTPUT"
-          printf 'artifact=images-%s\n' "$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: ${{ steps.build.outputs.artifact }}
-          path: ${{ runner.temp }}/images.tar
-          compression-level: 0
-          retention-days: 3
-          if-no-files-found: error
-
-  tests:
-    name: Component tests
-    needs: [build, publish]
-    if: >-
-      !cancelled() && needs.build.result == 'success' &&
-      (github.event_name == 'pull_request' ||
-       (startsWith(github.ref, 'refs/heads/release/') && needs.publish.result == 'success'))
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          submodules: recursive
-          token: ${{ secrets.SUBMODULES_READ_TOKEN || github.token }}
-          persist-credentials: false
-      - name: Run Product Jest tests
-        run: docker build --platform linux/amd64 --target tests --progress plain .
-
-  publish:
-    needs: build
-    if: github.event_name == 'push'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+  images:
+    uses: pyatakovvg/sellgar.infrastructure/.github/workflows/build-service.yml@delivery-v0.5.1
     permissions:
       contents: write
       packages: write
-    outputs:
-      image_digest: ${{ steps.publish.outputs.image_digest }}
-      migration_digest: ${{ steps.publish.outputs.migration_digest }}
-    env:
-      IMAGE: ${{ needs.build.outputs.image }}
-      MIGRATION_IMAGE: ${{ needs.build.outputs.migration_image }}
-      IMAGE_ID: ${{ needs.build.outputs.image_id }}
-      MIGRATION_IMAGE_ID: ${{ needs.build.outputs.migration_image_id }}
-      CHART_REVISION: ${{ needs.build.outputs.chart_revision }}
-      GH_TOKEN: ${{ github.token }}
-    steps:
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: ${{ needs.build.outputs.artifact }}
-          path: ${{ runner.temp }}
-      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
-      - name: Publish images
-        id: publish
-        run: |
-          docker load -i "$RUNNER_TEMP/images.tar"
-          test "$(docker image inspect -f '{{.Id}}' "$IMAGE")" = "$IMAGE_ID"
-          test "$(docker image inspect -f '{{.Id}}' "$MIGRATION_IMAGE")" = "$MIGRATION_IMAGE_ID"
-          docker push "$IMAGE"
-          docker push "$MIGRATION_IMAGE"
-          image=$(docker image inspect -f '{{index .RepoDigests 0}}' "$IMAGE")
-          migration=$(docker image inspect -f '{{index .RepoDigests 0}}' "$MIGRATION_IMAGE")
-          printf 'image_digest=%s\nmigration_digest=%s\n' "${image##*@}" "${migration##*@}" >> "$GITHUB_OUTPUT"
-          jq -n --arg source "$GITHUB_SHA" --arg chart "$CHART_REVISION" \
-            --arg repository "${image%@*}" --arg image "${image##*@}" --arg migration "${migration##*@}" \
-            --argjson run "$GITHUB_RUN_ID" \
-            '{source_revision:$source,chart_revision:$chart,image_repository:$repository,image_digest:$image,migration_image_digest:$migration,build_run:$run}' \
-            > "$RUNNER_TEMP/release.json"
-      - name: Publish release candidate
-        if: startsWith(github.ref, 'refs/heads/release/')
-        run: |
-          tag="candidate-$GITHUB_RUN_NUMBER.$GITHUB_RUN_ATTEMPT"
-          gh release create "$tag" "$RUNNER_TEMP/release.json" --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" --prerelease --title "$GITHUB_REF_NAME ($tag)" \
-            --notes "Application and migration images. Requires a successful CI run before promotion. Source: $GITHUB_SHA. Chart: $CHART_REVISION."
-          printf '### Candidate\n\n`%s` — select this tag in Release to production.\n' "$tag" >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: release-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/release.json
-          retention-days: 90
-          if-no-files-found: error
+    secrets:
+      SUBMODULES_READ_TOKEN: ${{ secrets.SUBMODULES_READ_TOKEN }}
+    with:
+      publish: true
 
   delivery:
-    needs: [build, publish]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/development'
-    uses: pyatakovvg/sellgar.infrastructure/.github/workflows/deliver-service.yml@delivery-v0.5.0
+    needs: images
+    uses: pyatakovvg/sellgar.infrastructure/.github/workflows/deliver-service.yml@delivery-v0.5.1
     secrets:
       SUBMODULES_READ_TOKEN: ${{ secrets.SUBMODULES_READ_TOKEN }}
     with:
@@ -180,6 +32,6 @@ jobs:
       namespace: sellgar-dev
       release-name: product-service
       source-revision: ${{ github.sha }}
-      chart-revision: ${{ needs.build.outputs.chart_revision }}
-      image-digest: ${{ needs.publish.outputs.image_digest }}
-      migration-image-digest: ${{ needs.publish.outputs.migration_digest }}
+      chart-revision: ${{ needs.images.outputs.chart-revision }}
+      image-digest: ${{ needs.images.outputs.image-digest }}
+      migration-image-digest: ${{ needs.images.outputs.migration-image-digest }}
