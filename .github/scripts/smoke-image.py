@@ -197,7 +197,7 @@ try:
                    'node_modules/typeorm/cli.js', '-d', 'service/dist/database/data-source.js', 'migration:run')
         migration_count = docker('exec', database, 'psql', '-U', 'product_srv_v2', '-d', 'product_srv_v2', '-Atc',
                                  'SELECT count(*) FROM migrations')
-        assert migration_count == '7', f'Expected seven migrations, got {migration_count}'
+        assert migration_count == '8', f'Expected eight migrations, got {migration_count}'
         app = network + '-app'
         start(app, '-e', 'NODE_OPTIONS=--max-old-space-size=256', '--read-only', '--cap-drop=ALL', '--security-opt=no-new-privileges', '--tmpfs', '/tmp',
               '-p', '127.0.0.1::8080', *mount, image)

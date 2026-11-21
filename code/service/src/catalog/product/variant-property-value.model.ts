@@ -7,6 +7,10 @@ import { VariantPropertyModel } from './variant-property.model';
 @Entity('variant_property_value')
 @Check('variant_property_value_position_nonnegative', 'position >= 0')
 @Check(
+  'variant_property_value_decimal_bounds',
+  'scale(value_decimal) <= 12 AND abs(value_decimal) < 100000000000000000000000000',
+)
+@Check(
   'variant_property_value_shape',
   `
   (property_kind = 'TEXT' AND value_text IS NOT NULL AND value_integer IS NULL AND value_decimal IS NULL AND value_boolean IS NULL AND value_date IS NULL AND value_option_code IS NULL)
@@ -45,7 +49,7 @@ export class VariantPropertyValueModel {
   @Column({ name: 'value_integer', type: 'bigint', nullable: true })
   valueInteger: string | null;
 
-  @Column({ name: 'value_decimal', type: 'numeric', precision: 38, scale: 12, nullable: true })
+  @Column({ name: 'value_decimal', type: 'numeric', nullable: true })
   valueDecimal: string | null;
 
   @Column({ name: 'value_boolean', type: 'boolean', nullable: true })
