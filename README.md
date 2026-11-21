@@ -74,6 +74,13 @@ Argo в Helm без удаления ресурсов. Все действия �
 infrastructure `docs/product-delivery.md` и `bootstrap/runner/README.md`.
 Другие сервисы продолжают существующую Argo/OCI доставку.
 
+В dev 21 ноября 2026 установлен официальный repository runner
+`sellgar-product-dev`: отдельный пользователь `product-runner`, systemd-служба,
+доступ Kubernetes только к `sellgar-dev`. Product передан от Argo CD к Helm с
+сохранением работающего сервиса и данных. Runner запускается вместе с VM;
+порядок обслуживания и обновления его сертификата находится в руководстве
+infrastructure `bootstrap/runner/README.md`.
+
 Внутренние Service/container: 8080. `GET /health` проверяет БД и оба RMQ consumer.
 Readiness HTTP не управляет доставкой RabbitMQ-команд; отсутствие потерь при
 rollout не обещается без отдельной проверки транспорта. Бизнес-контракты:
