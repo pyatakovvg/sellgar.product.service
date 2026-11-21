@@ -30,16 +30,9 @@ podSecurityContext:
   runAsGroup: 1000
   fsGroup: 1000
 volumeMounts:
-- name: environment
-  mountPath: /app/.env
-  subPath: .env
-  readOnly: true
 - name: temporary-files
   mountPath: /tmp
 volumes:
-- name: environment
-  configMap:
-    name: product-service-env
 - name: temporary-files
   emptyDir:
     sizeLimit: 32Mi
@@ -68,7 +61,7 @@ resources:
 ingress:
   enabled: false
 migration:
-  enabled: true
+  enabled: false
   image:
     repository: ghcr.io/pyatakovvg/sellgar.product.service
   env:
@@ -85,3 +78,5 @@ migration:
   backoffLimit: 0
   activeDeadlineSeconds: 600
   ttlSecondsAfterFinished: 86400
+environmentFile:
+  enabled: true

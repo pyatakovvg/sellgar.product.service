@@ -9,55 +9,66 @@
 Из `code/`: `yarn build:product_srv` и `yarn workspace @service/product test --runInBand`.
 Тесты проекций изображений используют временный PostgreSQL 16+ (`PG_BIN` или
 `pg_config`); тесты FTS запускаются отдельно с `PRODUCT_SEARCH_DATABASE_TESTS=1`.
-Dockerfile выполняет обычный набор тестов в отдельном этапе PostgreSQL 16.
+При доставке CI запускает существующие Jest-тесты отдельной job `test`,
+параллельно `migrate`, после публикации образов. Deploy ждёт обеих jobs.
+Docker target `tests` содержит PostgreSQL 16 для проверок persistence и миграций.
+Сами тесты остаются в `code/service/src`; сборка образов их не запускает.
 
 Из корня:
 
 ```bash
 docker build --target application -t sellgar-product:application .
 docker build --target migration -t sellgar-product:migration .
-python3 -B .github/scripts/smoke-image.py sellgar-product:application sellgar-product:migration
+docker build --target tests --progress plain .
 ```
-Smoke использует только временные контейнеры/БД и проверяет повторные миграции,
-RMQ CRUD/search, варианты/изображения, inbox, упорядоченные outbox snapshots,
-non-root/read-only runtime и отказ readiness после потери RabbitMQ.
+Тесты используют временный PostgreSQL; dev/prod базы им не нужны.
 
-## CI и среды
+## CI и доставка
 
-`development` → build/test/smoke → GHCR; `release/*` — выпуск, production workflow
-запускается вручную и использует два проверенных digest без повторной сборки.
-Одна сборка исходников обслуживает два Docker target. Образ `application` запускает
-Nest и не содержит каталога миграций или CLI DataSource. Образ `migration` содержит
-скомпилированные миграции, DataSource, его модели и runtime-зависимости; его CMD
-выполняет TypeORM CLI и завершает процесс. Nest-сервер в этой Job не запускается.
-Оба образа публикуются в один GHCR repository с тегами `sha-<commit>` и
-`sha-<commit>-migration`. Release manifest v2 и Helm OCI-пакет закрепляют оба digest
-из одного source commit; выпуск пакета возможен только после smoke всей пары.
-Argo CD отслеживает пакеты среды; инфраструктурный Git не меняется на каждый релиз.
+`development`: build → publish → delivery/[test | migrate] → delivery/deploy.
+`release/*`: build → publish → tests; кандидат допускается к prod только после
+успешного CI целиком. PR выполняет build → tests, без публикации и миграций.
+После merge release в master кнопка `Release to production` принимает тег кандидата,
+проверяет его исходники и образы и вызывает тот же delivery workflow для prod:
+test и migrate параллельно, затем deploy.
+Обратный PR master → development создаётся только после успешной доставки.
+Проверка ветки master требует обычного merge commit, а не squash/rebase.
 
-`helm/values.app.yaml` содержит общие параметры. `helm/dev/values.yaml` содержит
-одну реплику и ConfigMap `.env`; prod values должны быть заполнены при подключении
-prod. Общие Kubernetes templates принадлежат infrastructure/chart application.
+Два Docker target остаются: `application` запускает Nest без migrations/CLI
+DataSource, `migration` выполняет TypeORM CLI и завершает процесс. Build передаёт
+образы publish через artifact; публикация ждёт build и проверяет image IDs.
+Уникальные image tags включают source SHA, run ID и attempt. Runtime использует
+только digest. Release asset `release.json` сохраняет source/chart revisions,
+оба digest и CI run. Для кандидатов включается GitHub immutable releases.
 
-Секреты `product-database` и `rabbitmq-default-user` передаются через env refs.
-`PRODUCT_AMQP_URL` собирается Kubernetes из ранее определённых secret env-полей;
-его значение не попадает в ConfigMap или образ. Учетная запись/БД — `product_srv_v2`.
-Миграционный Job использует CMD образа: `node --env-file=.env node_modules/typeorm/cli.js -d
-service/dist/database/data-source.js migration:run`. Synchronize отключён.
-ConfigMap применяется в Sync wave -2, Job — -1, Deployment — 0. Job получает только
-DB secret refs, завершается с кодом 0 до обновления Deployment; ошибка блокирует
-раскатку. Лимит выполнения — 600 секунд, Job не повторяет неуспешный Pod.
-Повторы всей синхронизации задаются отдельно retry-политикой Argo CD Application.
-Результат и логи Job доступны до следующего Sync или 24 часа после завершения.
-Приложение и миграция пока используют существующую DB-роль; разделение прав
-DDL/DML требует отдельного изменения владельцев объектов и Secrets.
+Helm values принадлежат сервису: `helm/values.app.yaml` и `helm/dev|prod/values.yaml`.
+Общие templates и reusable delivery workflow принадлежат infrastructure.
+Chart checkout при build закрепляется SHA в кандидате, values берутся из source SHA.
+Workflow и checkout chart закреплены версией `delivery-v0.5.0` infrastructure;
+сначала публикуется этот immutable release/tag, затем Product. Тег не перемещается.
+Собственных Python-скриптов в CI и доставке Product нет. Отдельная RMQ/Docker
+smoke-цепочка удалена; под другим именем она не переносится.
 
-Prod workflow принимает только новый manifest v2 с обоими образами. Для старого
-кандидата с manifest v1 нужно заново выполнить CI release-ветки.
-Обновлённый delivery action/chart публикуется первым, затем его Git SHA закрепляется
-в `ci.yml` и `production.yml` Product. Другие сервисы сохраняют текущую доставку.
+`.env` приложения монтируется из immutable ConfigMap конкретного выпуска;
+предыдущие версии сохраняются для ещё работающих pod. У migration Job собственный
+ConfigMap. Credentials поступают через Secret refs, а не через GitHub build jobs.
+Secret names: `product-database`, `rabbitmq-default-user`, registry `ghcr-pull`.
+Database/user: `product_srv_v2`. В prod эти ресурсы создаются отдельно в sellgar-prod;
+наличие prod values не означает, что production уже развёрнут.
 
-Внутренние Service/container: 8080; `GET /health` проверяет БД и оба consumer.
-Доменные команды — `product.v2.commands`, File events — `product.v2.events`,
-exchange — `event.exchange`. Внешнего Ingress нет: API обслуживает Admin gateway.
-Подробности бизнес-контрактов: `code/service/README.md`, `REWRITE-CONTRACT.md`.
+Миграция получает только DB secret refs, backoffLimit 0 и deadline 600 секунд.
+Ошибка тестов или migration Job блокирует deploy. Успешная миграция остаётся
+применённой при ошибке параллельных тестов. Cancel workflow не удаляет выполняющуюся миграцию;
+следующий запуск отказывается стартовать поверх активной Job. Незавершённая Helm
+operation также требует проверки оператором до retry. Никакого автоматического
+реверса миграций нет. Миграции при Nest startup отключены.
+
+Первое включение требует self-hosted runner `sellgar-dev` и передачи Product из
+Argo в Helm без удаления ресурсов. Все действия и ограничения описаны в
+infrastructure `docs/product-delivery.md` и `bootstrap/runner/README.md`.
+Другие сервисы продолжают существующую Argo/OCI доставку.
+
+Внутренние Service/container: 8080. `GET /health` проверяет БД и оба RMQ consumer.
+Readiness HTTP не управляет доставкой RabbitMQ-команд; отсутствие потерь при
+rollout не обещается без отдельной проверки транспорта. Бизнес-контракты:
+`code/service/README.md`, `REWRITE-CONTRACT.md`.

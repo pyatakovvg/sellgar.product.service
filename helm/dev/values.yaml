@@ -1,8 +1,5 @@
 replicas: 1
-configmaps:
-- nameOverride: product-service-env
-  enabled: true
-  filename: .env
+environmentFile:
   data: |
     PORT=8080
     PRODUCT_DATABASE_HOST=postgresql-rw

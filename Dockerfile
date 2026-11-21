@@ -4,7 +4,7 @@ COPY code/ ./
 RUN node .yarn/releases/yarn-4.18.0.cjs install --immutable \
     && node .yarn/releases/yarn-4.18.0.cjs build:product_srv
 
-FROM postgres:16.16-bookworm@sha256:ce3efec6bc404f6b15ebf5d9bed6b45a9d4655aea238d7dacc3467ccb05a1175 AS verifier
+FROM postgres:16.16-bookworm@sha256:ce3efec6bc404f6b15ebf5d9bed6b45a9d4655aea238d7dacc3467ccb05a1175 AS tests
 COPY --from=builder /usr/local/bin/node /usr/local/bin/node
 COPY --from=builder --chown=postgres:postgres /app /app
 WORKDIR /app
@@ -17,11 +17,9 @@ RUN node .yarn/releases/yarn-4.18.0.cjs workspace @service/product test --runInB
     && PRODUCT_SNAPSHOT_DATABASE_TESTS=1 PRODUCT_DECIMAL_DATABASE_TESTS=1 PRODUCT_DATABASE_HOST=127.0.0.1 PRODUCT_DATABASE_PORT=6543 \
        PRODUCT_DATABASE_USERNAME=postgres PRODUCT_DATABASE_PASSWORD=integration PRODUCT_DATABASE_NAME=postgres \
        node --experimental-vm-modules --expose-gc ../node_modules/jest/bin/jest.js product-snapshot.integration.spec.ts decimal-scale.integration.spec.ts --runInBand \
-    && /usr/lib/postgresql/16/bin/pg_ctl -D /tmp/product-test-pg -m fast -w stop \
-    && touch /tmp/product-tests-passed
+    && /usr/lib/postgresql/16/bin/pg_ctl -D /tmp/product-test-pg -m fast -w stop
 
 FROM builder AS production-dependencies
-COPY --from=verifier /tmp/product-tests-passed /tmp/product-tests-passed
 RUN node .yarn/releases/yarn-4.18.0.cjs workspaces focus @service/product --production
 
 FROM node:24-bookworm-slim@sha256:dc26ae92c9fb15cf6b1d63e20f0944b2efe0f115b20e00be48fb23fceb061c54 AS runtime

@@ -33,14 +33,27 @@
   ConfigMap `.env` принадлежат этому репозиторию; общий chart — infrastructure.
 - Внутренний HTTP `GET /health` на `PORT` (default 8080) проверяет PostgreSQL и
   оба RMQ consumer: commands/events. Наружу сервис не публикуется.
-- CI строит образ на Node 24, проверяет тесты с временным PostgreSQL 16,
-  затем отдельным smoke — пустую БД, миграции, RMQ, inbox/outbox и readiness.
+- CI выполняет build образов на Node 24 → publish → параллельные test/migrate
+  → deploy. Test запускает существующие Jest-тесты с временным PostgreSQL 16;
+  migrate работает с БД выбранной среды. Deploy зависит от обеих jobs.
+- На PR без публикации выполняется build → tests; release/* запускает tests
+  после publish. Prod принимает только кандидата с успешным CI целиком.
 - Runtime содержит только production dependencies, compiled service и outbox;
   PostgreSQL присутствует только в проверочном этапе сборки.
 - Docker targets `application` и `migration` используют общую проверенную сборку.
   Первый не содержит migrations/CLI DataSource; второй выполняет TypeORM CLI без
-  старта Nest. CI smoke принимает оба образа. Release manifest v2 и Helm-пакет
-  закрепляют оба digest; prod продвигает ту же пару без сборки.
+  старта Nest. Docker target tests запускается отдельно от сборки образов.
+  GitHub Release хранит release.json
+  с обоими digest, source SHA и chart SHA. Prod принимает тег кандидата и
+  продвигает ту же пару без сборки.
+- Доставка вызывает общий reusable workflow infrastructure: migrate → deploy.
+  Команды Kubernetes/Helm находятся прямо в jobs; delivery Python/scripts и
+  сгенерированные per-release Helm-пакеты Product не использует.
+- Application `.env` — отдельный immutable ConfigMap версии выпуска. Миграция
+  использует собственный ConfigMap и не меняет конфигурацию работающего pod.
+- Runner и передача ресурсов из Argo в Helm настраиваются до включения CI.
+  Порядок: infrastructure `docs/product-delivery.md`. Автоматический реверс
+  миграций не реализуется.
 - Секреты приходят из Kubernetes Secret, `.env` — из ConfigMap. Не включать
   локальные `.env`, credentials и данные в Git/образ.
 

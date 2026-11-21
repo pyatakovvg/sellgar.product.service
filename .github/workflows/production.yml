@@ -1,11 +1,11 @@
 name: Release to production
-run-name: Release candidate ${{ inputs.release_run_id }} to production
+run-name: Deploy ${{ inputs.release_tag }} to production
 
 on:
   workflow_dispatch:
     inputs:
-      release_run_id:
-        description: 'ID успешного CI запуска ветки release/* (из Summary сборки)'
+      release_tag:
+        description: Verified candidate tag from Releases
         required: true
         type: string
 
@@ -18,119 +18,101 @@ concurrency:
   group: product-production
   cancel-in-progress: false
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
-  promote:
+  validate:
+    if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    permissions:
-      contents: read
-      actions: read
-      packages: write
-    env:
-      RELEASE_RUN_ID: ${{ inputs.release_run_id }}
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     outputs:
-      image: ${{ steps.promote.outputs.image }}
-      image_repository: ${{ steps.promote.outputs.image_repository }}
-      image_digest: ${{ steps.promote.outputs.image_digest }}
-      migration_image_digest: ${{ steps.promote.outputs.migration_image_digest }}
-      source_commit: ${{ steps.promote.outputs.source_commit }}
-      master_commit: ${{ steps.promote.outputs.master_commit }}
+      source: ${{ steps.release.outputs.source }}
+      chart: ${{ steps.release.outputs.chart }}
+      image: ${{ steps.release.outputs.image }}
+      migration: ${{ steps.release.outputs.migration }}
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Checkout release tooling from master
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          fetch-depth: 0
           persist-credentials: false
-
-      - name: Validate selected release build
-        run: python3 -B .github/scripts/release.py check-run "$RELEASE_RUN_ID"
-
-      - name: Download selected release manifest
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: release-manifest
-          path: ${{ runner.temp }}/release
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ inputs.release_run_id }}
-
-      - name: Verify release matches master
-        id: verify
-        run: python3 -B .github/scripts/release.py verify "$RELEASE_RUN_ID" "$RUNNER_TEMP/release"
-
-      - name: Login to GHCR for reading
-        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+      - name: Validate candidate and master
+        id: release
+        run: |
+          [[ "$RELEASE_TAG" =~ ^candidate-[0-9]+\.[0-9]+$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" | jq -e '.draft == false and .immutable == true'
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern release.json --dir "$RUNNER_TEMP/release"
+          metadata="$RUNNER_TEMP/release/release.json"
+          jq -e --arg repository "ghcr.io/${GITHUB_REPOSITORY,,}" \
+            '.image_repository == $repository and
+             (.source_revision | test("^[0-9a-f]{40}$")) and (.chart_revision | test("^[0-9a-f]{40}$")) and
+             (.image_digest | test("^sha256:[0-9a-f]{64}$")) and (.migration_image_digest | test("^sha256:[0-9a-f]{64}$"))' "$metadata"
+          source=$(jq -r .source_revision "$metadata")
+          test "$(git rev-parse "$RELEASE_TAG^{commit}")" = "$source"
+          test "$(git rev-parse "$source^{tree}")" = "$(git rev-parse 'HEAD^{tree}')"
+          git merge-base --is-ancestor "$source" HEAD
+          test "$(gh api "repos/$GITHUB_REPOSITORY/commits/master" --jq .sha)" = "$GITHUB_SHA"
+          run=$(jq -r .build_run "$metadata")
+          [[ "$run" =~ ^[1-9][0-9]*$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run" | jq -e --arg source "$source" \
+            '.head_sha == $source and .event == "push" and (.head_branch | startswith("release/")) and
+             .path == ".github/workflows/ci.yml" and .conclusion == "success"'
+          printf 'source=%s\nchart=%s\nimage=%s\nmigration=%s\n' "$source" \
+            "$(jq -r .chart_revision "$metadata")" "$(jq -r .image_digest "$metadata")" \
+            "$(jq -r .migration_image_digest "$metadata")" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Verify published image and run smoke
+          password: ${{ github.token }}
+      - name: Verify original images
         env:
-          IMAGE: ${{ steps.verify.outputs.image }}
-          MIGRATION_IMAGE: ${{ steps.verify.outputs.migration_image }}
-          SOURCE_COMMIT: ${{ steps.verify.outputs.source_commit }}
-        shell: bash
+          SOURCE: ${{ steps.release.outputs.source }}
+          APPLICATION: ghcr.io/${{ github.repository }}@${{ steps.release.outputs.image }}
+          MIGRATION: ghcr.io/${{ github.repository }}@${{ steps.release.outputs.migration }}
         run: |
-          docker pull "$IMAGE"
-          docker pull "$MIGRATION_IMAGE"
-          revision=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$IMAGE")
-          source=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.source"}}' "$IMAGE")
-          test "$revision" = "$SOURCE_COMMIT"
-          test "$source" = "https://github.com/$GITHUB_REPOSITORY"
-          test "$(docker image inspect --format '{{index .Config.Labels "io.sellgar.image-role"}}' "$IMAGE")" = application
-          test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$MIGRATION_IMAGE")" = "$SOURCE_COMMIT"
-          test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.source"}}' "$MIGRATION_IMAGE")" = "https://github.com/$GITHUB_REPOSITORY"
-          test "$(docker image inspect --format '{{index .Config.Labels "io.sellgar.image-role"}}' "$MIGRATION_IMAGE")" = migration
-          python3 -B .github/scripts/smoke-image.py "$IMAGE" "$MIGRATION_IMAGE"
+          docker pull "$APPLICATION"
+          docker pull "$MIGRATION"
+          for image in "$APPLICATION" "$MIGRATION"; do
+            test "$(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image")" = "$SOURCE"
+            test "$(docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.source"}}' "$image")" = "https://github.com/$GITHUB_REPOSITORY"
+          done
+          test "$(docker image inspect -f '{{index .Config.Labels "io.sellgar.image-role"}}' "$APPLICATION")" = application
+          test "$(docker image inspect -f '{{index .Config.Labels "io.sellgar.image-role"}}' "$MIGRATION")" = migration
 
-      - name: Prepare approved production release
-        id: promote
-        run: python3 -B .github/scripts/release.py promote "$RELEASE_RUN_ID" "$RUNNER_TEMP/release"
-
-      - name: Export production release for deployment
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: production-release
-          path: ${{ runner.temp }}/release/production/
-          if-no-files-found: error
-          overwrite: true
-          retention-days: 90
-
-      - name: Checkout pinned delivery tooling
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          repository: pyatakovvg/sellgar.infrastructure
-          ref: 2d5fdbc6b74515e5a9dc35d9e89b734eac5625a0
-          path: delivery
-          sparse-checkout: |
-            .github/actions/publish-helm
-            charts/application
-          persist-credentials: false
-
-      - name: Publish approved production release
-        uses: ./delivery/.github/actions/publish-helm
-        with:
-          environment: prod
-          source-commit: ${{ steps.promote.outputs.source_commit }}
-          image-digest: ${{ steps.promote.outputs.image_digest }}
-          migration-image-digest: ${{ steps.promote.outputs.migration_image_digest }}
-          release-name: product-service
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+  delivery:
+    needs: validate
+    uses: pyatakovvg/sellgar.infrastructure/.github/workflows/deliver-service.yml@delivery-v0.5.0
+    secrets:
+      SUBMODULES_READ_TOKEN: ${{ secrets.SUBMODULES_READ_TOKEN }}
+    with:
+      environment: prod
+      namespace: sellgar-prod
+      release-name: product-service
+      source-revision: ${{ needs.validate.outputs.source }}
+      chart-revision: ${{ needs.validate.outputs.chart }}
+      image-digest: ${{ needs.validate.outputs.image }}
+      migration-image-digest: ${{ needs.validate.outputs.migration }}
 
   back-merge:
-    needs: promote
+    needs: delivery
     runs-on: ubuntu-latest
-    timeout-minutes: 5
     permissions:
       contents: read
       pull-requests: write
     env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Checkout release tooling
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Open master to development pull request
-        run: python3 -B .github/scripts/release.py back-merge
+      - name: Open master to development PR
+        run: |
+          ahead=$(gh api "repos/$GITHUB_REPOSITORY/compare/development...master" --jq .ahead_by)
+          if [[ "$ahead" == 0 ]]; then exit 0; fi
+          existing=$(gh pr list --repo "$GITHUB_REPOSITORY" --base development --head master --state open --json url --jq '.[0].url // ""')
+          if [[ -n "$existing" ]]; then printf '%s\n' "$existing"; exit 0; fi
+          gh pr create --repo "$GITHUB_REPOSITORY" --base development --head master \
+            --title 'chore: merge master into development' \
+            --body 'Return the deployed release to development. Review and merge after checks.'

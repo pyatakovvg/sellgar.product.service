@@ -9,6 +9,7 @@
 **/.git
 .github
 helm
+infrastructure
 
 code/_service
 code/dist
