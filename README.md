@@ -50,7 +50,7 @@ DataSource, `migration` выполняет TypeORM CLI и завершает п�
 Helm values принадлежат сервису: `helm/values.app.yaml` и `helm/dev|prod/values.yaml`.
 Общие templates и reusable build/delivery workflows принадлежат infrastructure.
 Chart checkout при build закрепляется SHA в кандидате, values берутся из source SHA.
-Workflow и checkout chart закреплены версией `delivery-v0.5.1` infrastructure;
+Workflow и checkout chart закреплены версией `delivery-v0.5.2` infrastructure;
 сначала публикуется этот immutable release/tag, затем Product. Тег не перемещается.
 Собственных Python-скриптов в CI и доставке Product нет. Отдельная RMQ/Docker
 smoke-цепочка удалена; под другим именем она не переносится.

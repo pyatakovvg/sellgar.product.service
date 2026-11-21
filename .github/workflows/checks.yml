@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   images:
-    uses: pyatakovvg/sellgar.infrastructure/.github/workflows/build-service.yml@delivery-v0.5.1
+    uses: pyatakovvg/sellgar.infrastructure/.github/workflows/build-service.yml@delivery-v0.5.2
     permissions:
       contents: write
       packages: write
